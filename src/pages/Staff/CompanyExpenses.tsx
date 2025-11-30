@@ -1,7 +1,9 @@
 "use client"
-import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useCallback, ChangeEvent, PropsWithChildren, CSSProperties, useMemo } from "react"
+// **FIXED**: Using React Router hook for navigation
+import { useNavigate } from 'react-router-dom'; 
 import { Trash2, ChevronDown, ChevronUp, Search } from 'lucide-react';
+// REMOVED: import StaffCompanyExpensesPage from "./CompanyExpenses"; // This line causes the file to import itself.
 
 // Define local placeholder components with inline styles
 const PrimaryColor = '#0B3D91';
@@ -9,7 +11,7 @@ const DestructiveColor = '#dc2626';
 const MutedColor = '#6b7280';
 const LightBg = '#f3f4f6';
 
-// --- UI Components ---
+// --- UI Components (Simplified for Example) ---
 const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'ghost' | 'destructive' | 'icon' }> = ({ children, onClick, style, disabled, type = 'button', variant = 'default', className, ...props }) => {
     let backgroundColor = PrimaryColor;
     let color = 'white';
@@ -54,7 +56,6 @@ const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => 
     <input {...props} style={{ padding: '0.6rem 0.8rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%' }} />
 );
 
-// CardTitle and TableCell definitions were correctly updated in the prior response
 const Card: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem', backgroundColor: '#fff', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', ...style }}>{children}</div>;
 const CardHeader: React.FC<PropsWithChildren> = ({ children }) => <div>{children}</div>;
 const CardTitle: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem', ...style }}>{children}</h2>;
@@ -96,7 +97,8 @@ const TableHeader: React.FC<PropsWithChildren> = ({ children }) => <thead>{child
 const TableBody: React.FC<PropsWithChildren> = ({ children }) => <tbody>{children}</tbody>;
 const TableRow: React.FC<PropsWithChildren> = ({ children }) => <tr style={{ borderBottom: '1px solid #eee' }}>{children}</tr>;
 
-const TableHead: React.FC<PropsWithChildren & { style?: CSSProperties, onClick?: () => void, isSortable?: boolean }> = ({ children, style, onClick, isSortable = false }) => (
+// Updated TableHead to handle sorting state
+const TableHead: React.FC<PropsWithChildren & { style?: CSSProperties, onClick?: () => void, isSortable?: boolean, activeSortKey?: string, columnKey?: string, sortDirection?: 'asc' | 'desc' }> = ({ children, style, onClick, isSortable = false, activeSortKey, columnKey, sortDirection }) => (
     <th 
         onClick={onClick} 
         style={{ 
@@ -110,7 +112,16 @@ const TableHead: React.FC<PropsWithChildren & { style?: CSSProperties, onClick?:
     >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             {children}
-            {isSortable && <ChevronDown size={14} style={{ opacity: 0.5 }} />}
+            {isSortable && (
+                <span style={{ display: 'flex', alignItems: 'center' }}>
+                    {activeSortKey === columnKey ? (
+                        sortDirection === 'desc' ? <ChevronDown size={14} /> : <ChevronUp size={14} />
+                    ) : (
+                        // Default icon when not sorted by this column
+                        <ChevronDown size={14} style={{ opacity: 0.5 }} />
+                    )}
+                </span>
+            )}
         </div>
     </th>
 );
@@ -126,16 +137,13 @@ interface Expense {
     amount: number
     expense_date: string
     payment_method: "cash" | "transfer" | "check"
-    // userId is used to filter staff-specific expenses
     userId: number
 }
 
-// Allowed expense categories for filtering/dropdowns
 const EXPENSE_CATEGORIES = [
     "Fuel", "Salaries", "Maintenance", "Office Supplies", "Rent", "Utilities", "Travel", "Uncategorized"
 ];
 
-// Mock Expenses: User 1 and 2 are Staff, User 99 is Admin/System
 const INITIAL_MOCK_EXPENSES: Expense[] = [
     { id: 1, category: "Maintenance", description: "Oil change and tire replacement (User 1)", amount: 150000, expense_date: "2025-11-17", payment_method: "cash", userId: 1 },
     { id: 2, category: "Fuel", description: "Diesel for trucks (User 2)", amount: 80000, expense_date: "2025-11-15", payment_method: "transfer", userId: 2 },
@@ -145,9 +153,8 @@ const INITIAL_MOCK_EXPENSES: Expense[] = [
     { id: 6, category: "Travel", description: "Flight ticket to Lagos (User 2)", amount: 50000, expense_date: "2025-11-19", payment_method: "transfer", userId: 2 },
     { id: 7, category: "Utilities", description: "Electricity bill (User 1)", amount: 25000, expense_date: "2025-11-20", payment_method: "transfer", userId: 1 },
     { id: 8, category: "Maintenance", description: "Server maintenance (Admin)", amount: 500000, expense_date: "2025-11-20", payment_method: "check", userId: 99 },
-    // Mock expense for Staff ID 5 (for testing the new flow)
     { id: 9, category: "Travel", description: "Toll fare and parking (User 5)", amount: 3000, expense_date: "2025-11-21", payment_method: "cash", userId: 5 },
-    { id: 10, category: "Office Supplies", description: "New external monitor (User 5)", amount: 90000, expense_date: "2025-11-12", payment_method: "transfer", userId: 5 }, // Older expense
+    { id: 10, category: "Office Supplies", description: "New external monitor (User 5)", amount: 90000, expense_date: "2025-11-12", payment_method: "transfer", userId: 5 }, 
 ];
 
 
@@ -157,9 +164,8 @@ type SortDirection = 'asc' | 'desc';
 // --- CORE COMPONENT ---
 const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }) => {
     
+    const navigate = useNavigate(); // **FIXED**: Initialize React Router's useNavigate hook
     const isAdmin = role === 'admin';
-    // MOCK STAFF ID: For staff roles, we assign a specific ID (e.g., 5). 
-    // This allows testing the filtering/submission for a specific staff member.
     const currentUserId = isAdmin ? 99 : 5; // Admin ID is 99, Staff ID is 5 (mock)
 
     const [expenses, setExpenses] = useState<Expense[]>([])
@@ -179,11 +185,11 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     
     // Helper to get the date 7 days ago
-    const getSevenDaysAgo = () => {
+    const getSevenDaysAgo = useCallback(() => {
         const d = new Date();
         d.setDate(d.getDate() - 7);
         return d.toISOString().split('T')[0];
-    };
+    }, []);
 
     // Data Persistence Logic
     useEffect(() => {
@@ -235,13 +241,6 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
     };
     
     const handleAddExpense = () => {
-        // PERMISSION CHANGE: Staff (currentUserId > 0) can now record expenses, Admin (ID 99) can too.
-        if (currentUserId === null) {
-            setErrorMessage("Cannot determine user ID for recording expense.");
-            setSuccessMessage(null);
-            return;
-        }
-
         if (!newExpense.description || !newExpense.amount || !newExpense.expense_date || newExpense.amount <= 0) {
             setErrorMessage("Description, a positive amount, and date are required.")
             setSuccessMessage(null)
@@ -252,7 +251,6 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
             id: getNextId(), 
             ...newExpense,
             category: newExpense.category || "Uncategorized",
-            // Use the staff's actual ID (currentUserId) for recording.
             userId: currentUserId 
         }
 
@@ -280,9 +278,9 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
     // Summary expenses calculated for the last 7 days (all users)
     const summaryExpenses = useMemo(() => {
         const sevenDaysAgo = getSevenDaysAgo();
-        // The summary card always reflects ALL company expenses over the last 7 days (Admin view only)
-        return expenses.filter(e => e.expense_date >= sevenDaysAgo && e.userId !== 99); // Exclude system expenses from this tally if desired, but keeping all for clarity.
-    }, [expenses]);
+        // The summary card always reflects ALL company expenses over the last 7 days
+        return expenses.filter(e => e.expense_date >= sevenDaysAgo); 
+    }, [expenses, getSevenDaysAgo]);
     
     // Summary Calculation for the last 7 days
     const expenseSummary = useMemo(() => {
@@ -300,15 +298,14 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
         let currentExpenses = [...expenses];
         const sevenDaysAgo = getSevenDaysAgo();
         
-        // **STAFF RESTRICTIONS** (Role 'staff' and currentUserId is a staff ID)
-        if (!isAdmin && currentUserId !== 99) {
+        // **STAFF RESTRICTIONS** (If not Admin, filter to user's expenses in last 7 days)
+        if (!isAdmin) {
             // 1. Filter by Current User ID (Staff sees theirs only)
             currentExpenses = currentExpenses.filter(expense => expense.userId === currentUserId);
             
             // 2. Filter by Last 7 Days (Staff history is 7 days)
             currentExpenses = currentExpenses.filter(expense => expense.expense_date >= sevenDaysAgo);
         }
-        // Admin sees all expenses (all users, all history) by default, no need for the initial filters above.
 
         // 3. Search and Category Filtering (Applies to both roles, on their respective datasets)
         currentExpenses = currentExpenses.filter(expense => {
@@ -333,18 +330,23 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
         });
 
         return currentExpenses;
-    }, [expenses, searchTerm, filterCategory, sortBy, sortDirection, isAdmin, currentUserId]);
+    }, [expenses, searchTerm, filterCategory, sortBy, sortDirection, isAdmin, currentUserId, getSevenDaysAgo]);
 
     // --- RENDER ---
     return (
         <div style={{ minHeight: '100vh', backgroundColor: LightBg }}>
             <nav style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Button variant="ghost" onClick={() => window.history.back()}>
+                <Button 
+                    variant="ghost" 
+                    // **FIXED**: Using navigate(-1) for back functionality
+                    onClick={() => navigate(-1)} 
+                >
                     ← Back
                 </Button>
                 <Button variant="destructive" onClick={() => {
                     localStorage.removeItem("currentUser");
-                    window.location.href = "/login";
+                    // **FIXED**: Using navigate('/login') for logout
+                    navigate("/login"); 
                 }}>
                     Logout (Mock)
                 </Button>
@@ -387,7 +389,6 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
                 {/* ------------------------- */}
                 
                 {/* --- RECORD EXPENSE (Staff & Admin) --- */}
-                {/* Now available to both Admin and Staff (based on currentUserId being set) */}
                 <Card style={{ marginBottom: '2rem' }}>
                     <CardHeader>
                         <CardTitle>Record {isAdmin ? 'Company' : 'Personal'} Expense</CardTitle>
@@ -455,12 +456,9 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
 
                 <Card>
                     <CardHeader>
-                        <CardTitle style={{ marginBottom: isAdmin ? '1rem' : '0.5rem' }}>
+                        <CardTitle style={{ marginBottom: '1rem' }}>
                             📊 Expense Records ({isAdmin ? "All" : "Your Last 7 Days"})
                         </CardTitle>
-                        {
-                           
-                        }
                     </CardHeader>
                     <CardContent>
                         {/* --- Search and Filter Bar --- */}
@@ -493,22 +491,29 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
                                     <TableRow>
                                         <TableHead>Category</TableHead>
                                         <TableHead>Description</TableHead>
+                                        {/* Updated TableHead for Sorting Icons */}
                                         <TableHead 
                                             style={{ textAlign: 'right' }} 
                                             isSortable 
+                                            columnKey="amount"
+                                            activeSortKey={sortBy}
+                                            sortDirection={sortDirection}
                                             onClick={() => handleSort('amount')}
                                         >
-                                            Amount (₦) {sortBy === 'amount' && (sortDirection === 'desc' ? <ChevronDown size={14} /> : <ChevronUp size={14} />)}
+                                            Amount (₦)
                                         </TableHead> 
                                         <TableHead>Payment Method</TableHead>
                                         <TableHead 
                                             isSortable 
+                                            columnKey="expense_date"
+                                            activeSortKey={sortBy}
+                                            sortDirection={sortDirection}
                                             onClick={() => handleSort('expense_date')}
                                         >
-                                            Date {sortBy === 'expense_date' && (sortDirection === 'desc' ? <ChevronDown size={14} /> : <ChevronUp size={14} />)}
+                                            Date
                                         </TableHead>
                                         <TableHead style={{ width: isAdmin ? '50px' : 'auto', textAlign: isAdmin ? 'center' : 'left' }}>
-                                            {isAdmin ? 'Actions' : 'User ID'} {/* Staff view: shows User ID instead of actions */}
+                                            {isAdmin ? 'Actions' : 'User ID'} 
                                         </TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -521,7 +526,7 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
                                                 <TableCell style={{ textAlign: 'right', fontWeight: '600' }}>₦{expense.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</TableCell>
                                                 <TableCell>{expense.payment_method}</TableCell>
                                                 <TableCell>{expense.expense_date}</TableCell>
-                                                <TableCell style={{ textAlign: 'center' }}>
+                                                <TableCell style={{ textAlign: isAdmin ? 'center' : 'left' }}>
                                                     {isAdmin ? (
                                                         <Button 
                                                             variant="icon" 
@@ -531,7 +536,6 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
                                                             <Trash2 size={16} />
                                                         </Button>
                                                     ) : (
-                                                        // Staff view: show User ID instead of action button
                                                         <span style={{ color: MutedColor, fontSize: '0.75rem' }}>{expense.userId}</span>
                                                     )}
                                                 </TableCell>
@@ -559,5 +563,6 @@ const CompanyExpensesPageBase: React.FC<{ role: 'admin' | 'staff' }> = ({ role }
 
 // Staff-specific export: Passes 'staff' role
 export default function StaffCompanyExpensesPage() {
+    // This component renders CompanyExpensesPageBase with the 'staff' role.
     return <CompanyExpensesPageBase role="staff" />;
 }
