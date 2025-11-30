@@ -1,0 +1,47 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Users\HP\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.6.3
+2 info using node@v24.11.0
+3 silly config load:file:C:\Users\HP\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\HP\.npmrc
+5 silly config load:file:C:\Users\HP\AppData\Roaming\npm\etc\npmrc
+6 verbose title npm install pnpm
+7 verbose argv "install" "--global" "pnpm"
+8 verbose logfile logs-max:10 dir:C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-11-29T22_47_48_016Z-
+9 verbose logfile C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-11-29T22_47_48_016Z-debug-0.log
+10 silly packumentCache heap:2348810240 maxSize:587202560 maxEntrySize:293601280
+11 silly logfile start cleaning logs, removing 1 files
+12 silly logfile done cleaning log files
+13 silly idealTree buildDeps
+14 silly fetch manifest pnpm@*
+15 silly packumentCache full:https://registry.npmjs.org/pnpm cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/pnpm 1384ms (cache miss)
+17 silly packumentCache full:https://registry.npmjs.org/pnpm set size:undefined disposed:false
+18 silly placeDep ROOT pnpm@10.24.0 OK for:  want: *
+19 silly reify mark retired [
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\node_modules\\pnpm',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpm',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpm.cmd',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpm.ps1',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpx',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpx.cmd',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpx.ps1'
+19 silly reify ]
+20 silly reify moves {
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\node_modules\\pnpm': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\node_modules\\.pnpm-6blGlINi',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpm': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.pnpm-H1yDsg8q',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpm.cmd': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.pnpm.cmd-XIvYKQxB',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpm.ps1': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.pnpm.ps1-NLSrwmh6',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpx': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.pnpx-46lYTmUp',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpx.cmd': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.pnpx.cmd-KDgPwkUa',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\pnpx.ps1': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.pnpx.ps1-9QWRsPTO'
+20 silly reify }
+21 http cache pnpm@https://registry.npmjs.org/pnpm/-/pnpm-10.24.0.tgz 1ms (cache hit)
+22 silly tarball no local data for pnpm@https://registry.npmjs.org/pnpm/-/pnpm-10.24.0.tgz. Extracting by manifest.
+23 http fetch GET 200 https://registry.npmjs.org/pnpm/-/pnpm-10.24.0.tgz 4718ms (cache miss)
+24 silly CHANGE node_modules/pnpm
+25 verbose cwd C:\Users\HP\Videos\staff-tracker-main
+26 verbose os Windows_NT 10.0.22000
+27 verbose node v24.11.0
+28 verbose npm  v11.6.3
+29 verbose exit 0
+30 info ok

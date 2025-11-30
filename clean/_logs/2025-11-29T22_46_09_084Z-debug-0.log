@@ -1,0 +1,49 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Users\HP\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.6.3
+2 info using node@v24.11.0
+3 silly config load:file:C:\Users\HP\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\HP\.npmrc
+5 silly config load:file:C:\Users\HP\AppData\Roaming\npm\etc\npmrc
+6 verbose title npm install yarn
+7 verbose argv "install" "--global" "yarn"
+8 verbose logfile logs-max:10 dir:C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-11-29T22_46_09_084Z-
+9 verbose logfile C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-11-29T22_46_09_084Z-debug-0.log
+10 silly packumentCache heap:2348810240 maxSize:587202560 maxEntrySize:293601280
+11 silly logfile start cleaning logs, removing 1 files
+12 silly logfile done cleaning log files
+13 silly idealTree buildDeps
+14 silly fetch manifest yarn@*
+15 silly packumentCache full:https://registry.npmjs.org/yarn cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/yarn 870ms (cache miss)
+17 silly packumentCache full:https://registry.npmjs.org/yarn set size:undefined disposed:false
+18 silly placeDep ROOT yarn@1.22.22 OK for:  want: *
+19 silly reify mark retired [
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\node_modules\\yarn',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarn',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarn.cmd',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarn.ps1',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarnpkg',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarnpkg.cmd',
+19 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarnpkg.ps1'
+19 silly reify ]
+20 silly reify moves {
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\node_modules\\yarn': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\node_modules\\.yarn-YWu615YD',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarn': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.yarn-G0fgCTXG',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarn.cmd': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.yarn.cmd-UOYj56OW',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarn.ps1': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.yarn.ps1-3jvA9vRG',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarnpkg': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.yarnpkg-Dx2jsDMa',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarnpkg.cmd': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.yarnpkg.cmd-rT4kpXT4',
+20 silly reify   'C:\\Users\\HP\\AppData\\Roaming\\npm\\yarnpkg.ps1': 'C:\\Users\\HP\\AppData\\Roaming\\npm\\.yarnpkg.ps1-llORbPrF'
+20 silly reify }
+21 http cache yarn@https://registry.npmjs.org/yarn/-/yarn-1.22.22.tgz 0ms (cache hit)
+22 silly tarball no local data for yarn@https://registry.npmjs.org/yarn/-/yarn-1.22.22.tgz. Extracting by manifest.
+23 http fetch GET 200 https://registry.npmjs.org/yarn/-/yarn-1.22.22.tgz 991ms (cache miss)
+24 info run yarn@1.22.22 preinstall node_modules/yarn :; (node ./preinstall.js > /dev/null 2>&1 || true)
+25 info run yarn@1.22.22 preinstall { code: 0, signal: null }
+26 silly CHANGE node_modules/yarn
+27 verbose cwd C:\Users\HP\Videos\staff-tracker-main
+28 verbose os Windows_NT 10.0.22000
+29 verbose node v24.11.0
+30 verbose npm  v11.6.3
+31 verbose exit 0
+32 info ok

@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =============================
+   COLOR VARIABLES (Deep Blue Theme)
+   ============================= */
+:root {
+  --background: #000000;                /* Black page background */
+  --foreground: #ffffff;
+
+  --card: #0f172a;                      /* Deep navy blue */
+  --card-foreground: #e2e8f0;
+
+  --primary: #1e3a8a;                   /* Deep royal blue */
+  --primary-foreground: #ffffff;
+
+  --muted: #1e293b;                     /* Soft dark blue */
+  --muted-foreground: #94a3b8;
+
+  --accent: #3b82f6;                    /* Vivid blue hover */
+  --accent-foreground: #ffffff;
+
+  --border: #334155;                    /* Dark blue borders */
+}
+
+/* =============================
+   Base Styles
+   ============================= */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* =============================
+   Animations
+   ============================= */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.8s ease-out forwards;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

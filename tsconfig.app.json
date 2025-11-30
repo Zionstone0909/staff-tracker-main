@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    /* Target and Environment */
+    "target": "ES2020",             /* Modern target for broad compatibility. ESNext is valid but ES2020/2022 is often more explicit. */
+    "module": "ESNext",             /* Use modern ES module syntax. */
+    "lib": ["DOM", "DOM.Iterable", "ES2020"], /* Include necessary runtime libraries. */
+    "moduleResolution": "bundler",  /* RECOMMENDED: 'Bundler' is the modern, best practice module resolution for projects using tools like Vite or Webpack. */
+    "jsx": "react-jsx",             /* Use the modern React JSX transform. */
+    "allowJs": true,                /* Allow JavaScript files to be part of the project. */
+    "resolveJsonModule": true,      /* Allow importing JSON files. */
+    "isolatedModules": true,        /* Ensure files can be compiled individually (good for bundlers). */
+    "noEmit": true,                 /* Essential for projects using bundlers; TypeScript only checks types, the bundler handles compilation. */
+    
+    /* Strictness and Interop */
+    "strict": true,                 /* Enable all strict type-checking options. */
+    "forceConsistentCasingInFileNames": true, /* Ensure correct case for file imports. */
+    "esModuleInterop": true,        /* Enable compatibility between CommonJS and ES Modules. */
+    "allowSyntheticDefaultImports": true, /* Allow default imports from modules with no default export. */
+    
+    /* Maintenance and Performance */
+    "skipLibCheck": true,           /* Speeds up compilation by skipping checks on declaration files. */
+    
+    /* Type Declarations (The main correction) */
+    "types": [
+      "node" 
+      /* MAJOR CORRECTION: Removed the extensive list of packages (react, d3, babel, etc.). 
+         TypeScript automatically discovers types for these dependencies in node_modules, 
+         so listing them manually is unnecessary and prevents automatic type acquisition. */
+    ]
+  },
+  
+  /* File Inclusion */
+  "include": ["src"],               /* Only include files within the 'src' directory for compilation/checking. */
+  
+  /* Additional Recommended Options */
+  "exclude": ["node_modules", "dist"] /* Explicitly ignore these directories. */
+}

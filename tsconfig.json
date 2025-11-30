@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    /* Basic Options */
+    "target": "ES2020",
+    "module": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    
+    /* Module Resolution */
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
+    /* Strictness Options */
+    "strict": true,
+    "allowJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* Type Checking and Environment Setup */
+    "skipLibCheck": true,
+    "types": [
+      "node", 
+      "vite/client" 
+    ],
+    // Allows absolute imports like "@/components/Component"
+    "baseUrl": "./src", 
+    "paths": {
+      "@/*": ["./*"] 
+    }
+  },
+  
+  // *** FULLY CORRECTED INCLUDE PATH ***
+  // This tells TypeScript to include both the 'src' directory 
+  // AND the 'lib' directory where supabase.ts is located.
+  "include": ["src", "lib"],
+
+  "exclude": ["node_modules", "dist"]
+}

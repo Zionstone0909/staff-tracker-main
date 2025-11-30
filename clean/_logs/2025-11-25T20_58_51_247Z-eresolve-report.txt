@@ -1,0 +1,18 @@
+'Log files:
+C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-11-25T20_58_51_247Z-debug-0.log
+
+# npm resolution error report
+
+While resolving: staff-tracker-main@0.0.0
+Found: react@undefined
+node_modules/react
+  react@"^19.2.0" from the root project
+
+Could not resolve dependency:
+peer react@">=18" from react-router-dom@7.9.6
+node_modules/react-router-dom
+  react-router-dom@"7.9.6" from the root project
+
+Fix the upstream dependency conflict, or retry
+this command with --force or --legacy-peer-deps
+to accept an incorrect (and potentially broken) dependency resolution.
