@@ -3,14 +3,16 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc --noEmit && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "netlify": "netlify dev",
     "serve": "vite preview --port 5173"
   },
+
   "dependencies": {
     "@hookform/resolvers": "5.0.1",
     "@radix-ui/react-dialog": "1.1.11",
@@ -45,6 +47,7 @@
     "zod": "3.24.3",
     "zustand": "5.0.3"
   },
+
   "devDependencies": {
     "@eslint/js": "9.22.0",
     "@types/date-fns": "2.5.3",
@@ -65,8 +68,8 @@
     "typescript-eslint": "8.26.1",
     "vite": "6.3.1"
   },
+
   "description": "Frontend of the Staff Tracker System using React 18, TypeScript, Zustand, TailwindCSS 4, Vite, and Shadcn UI.",
-  "main": "eslint.config.js",
   "keywords": [],
   "author": "",
   "license": "ISC"

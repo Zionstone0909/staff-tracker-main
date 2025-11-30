@@ -1,0 +1,20 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Users\HP\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.6.3
+2 info using node@v24.11.0
+3 silly config load:file:C:\Users\HP\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:c:\Users\HP\Videos\staff-tracker-main\.npmrc
+5 silly config load:file:C:\Users\HP\.npmrc
+6 silly config load:file:C:\Users\HP\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm view typescript description dist-tags.latest homepage version time
+8 verbose argv "view" "--json" "--" "typescript" "description" "dist-tags.latest" "homepage" "version" "time"
+9 verbose logfile logs-max:10 dir:c:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-11-30T06_38_59_687Z-
+10 verbose logfile c:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-11-30T06_38_59_687Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly logfile done cleaning log files
+13 http fetch GET 200 https://registry.npmjs.org/typescript 1559ms (cache revalidated)
+14 verbose cwd c:\Users\HP\Videos\staff-tracker-main
+15 verbose os Windows_NT 10.0.22000
+16 verbose node v24.11.0
+17 verbose npm  v11.6.3
+18 verbose exit 0
+19 info ok
