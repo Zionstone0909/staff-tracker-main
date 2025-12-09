@@ -1,32 +1,61 @@
-// src/routes/ProtectedRoute.tsx
-import React from 'react';
+// src/components/ProtectedRoute.tsx
+import React, { ReactNode } from 'react';
 import { Navigate, useLocation } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
+// Ensure this import path is correct for your Role type
+import { useAuth, Role } from "../contexts/AuthContext"; 
 
 interface ProtectedRouteProps {
-  allowedRoles: ("admin" | "staff")[];
-  // Using React.ReactNode is a flexible type that handles JSX elements, strings, etc.
-  children: React.ReactNode; 
+  // Use your defined Role type (likely "admin" | "staff")
+  allowedRoles?: Role[]; 
+  children: ReactNode;
 }
 
-// Removing the explicit return type annotation (like : JSX.Element) lets TypeScript infer it,
-// which is usually safer if you have configuration issues.
 export default function ProtectedRoute({ allowedRoles, children }: ProtectedRouteProps) {
-  const { user } = useAuth();
+  const { user, initialized } = useAuth();
   const location = useLocation();
 
+  // 1. Show nothing/loader until Firebase auth is initialized.
+  if (!initialized) {
+    return <div>Loading application state...</div>;
+  }
+
+  // 2. Handle public routes where authentication doesn't matter.
+  const isPublic = !allowedRoles || allowedRoles.length === 0;
+  if (isPublic) {
+    return <>{children}</>;
+  }
+
+  // --- Protected Routes Logic ---
+
+  // 3. If the user is not logged in AND the route is protected, redirect to login.
   if (!user) {
-    // If the user is not logged in, redirect them to the login page.
-    // The `state` object helps us redirect them back to where they were after they log in.
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
+  // 4. If logged in, check role authorization.
   if (!allowedRoles.includes(user.role)) {
-    // If the user is logged in but tries to access a restricted area (e.g., staff tries to access /admin)
-    // redirect them to their correct dashboard.
-    return <Navigate to={user.role === "admin" ? "/admin" : "/staff"} replace />;
+    // 5. If access is denied, redirect them to a sensible default page for their role.
+    let redirectPath: string;
+
+    // Since 'Role' can only be 'admin' or 'staff' based on your types:
+    switch (user.role) {
+        case "admin":
+            redirectPath = "/admin";
+            break;
+        case "staff":
+            redirectPath = "/staff";
+            break;
+        // The 'default' case should now handle unexpected roles or be a fallback 
+        // that logically shouldn't be hit if your types are strictly correct.
+        default:
+            // If somehow the role isn't admin or staff, send them home/a general error page
+            redirectPath = "/"; 
+            break;
+    }
+
+    return <Navigate to={redirectPath} replace />;
   }
 
-  // If the user is logged in and authorized, render the children (the actual page component).
+  // 6. If authenticated and authorized, render the children.
   return <>{children}</>;
 }

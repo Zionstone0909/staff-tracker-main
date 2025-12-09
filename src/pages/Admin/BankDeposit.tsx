@@ -1,7 +1,7 @@
 // src/pages/Admin/BankDeposit.tsx
 "use client";
 
-import { useState, useEffect, useMemo, FormEvent, CSSProperties, PropsWithChildren } from "react";
+import { useState, useEffect, useMemo, FormEvent, CSSProperties, PropsWithChildren, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { useAuth, User as AuthUser } from "../../contexts/AuthContext";
@@ -67,11 +67,11 @@ const Alert: React.FC<PropsWithChildren & { variant?: string }> = ({ children, v
 
 const AlertDescription: React.FC<PropsWithChildren> = ({ children }) => <p>{children}</p>;
 
-const Table: React.FC<PropsWithChildren> = ({ children }) => <table style={{ width: '100%', borderCollapse: 'collapse' }}>{children}</table>;
+const Table: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <table style={{ width: '100%', borderCollapse: 'collapse', ...style }}>{children}</table>;
 const TableHeader: React.FC<PropsWithChildren> = ({ children }) => <thead>{children}</thead>;
 const TableBody: React.FC<PropsWithChildren> = ({ children }) => <tbody>{children}</tbody>;
 const TableRow: React.FC<PropsWithChildren> = ({ children }) => <tr style={{ borderBottom: '1px solid #eee' }}>{children}</tr>;
-const TableHead: React.FC<PropsWithChildren> = ({ children }) => <th scope="col" style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 'bold', borderBottom: '2px solid #ccc' }}>{children}</th>;
+const TableHead: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <th scope="col" style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 'bold', borderBottom: '2px solid #ccc', ...style }}>{children}</th>;
 const TableCell: React.FC<PropsWithChildren & { colSpan?: number, style?: CSSProperties }> = ({ children, style, colSpan }) => <td colSpan={colSpan} style={{ padding: '0.75rem', ...style }}>{children}</td>;
 
 // --- Data Structures ---
@@ -103,24 +103,101 @@ const formatCurrency = (amount: number) =>
 const formatDate = (date: string) =>
     new Date(date).toLocaleString();
 
+// Helper to format date string for HTML date input (YYYY-MM-DD)
+const toDateInputString = (date?: Date): string => {
+    if (!date) return '';
+    return date.toISOString().split('T')[0];
+};
+
 // --- Mock Data ---
 const MOCK_DEPOSITS: Deposit[] = [
-    { id: 1, amount: 500000, description: "Initial capital deposit", initiated_at: new Date(Date.now() - 345600000).toISOString(), initiated_by_user_id: '101' },
-    { id: 2, amount: 250000, description: "Sales deposit from Week 1", initiated_at: new Date(Date.now() - 259200000).toISOString(), initiated_by_user_id: '202' },
-    { id: 3, amount: 150000, description: "Daily sales deposit (Staff 202)", initiated_at: new Date().toISOString(), initiated_by_user_id: '202' },
-    { id: 4, amount: 1000000, description: "Main capital injection (Admin 101)", initiated_at: new Date().toISOString(), initiated_by_user_id: '101' },
+    { id: 1, amount: 500000, description: "Initial capital deposit", initiated_at: new Date(Date.now() - 345600000).toISOString(), initiated_by_user_id: '101' }, // 4 days ago
+    { id: 2, amount: 250000, description: "Sales deposit from Week 1", initiated_at: new Date(Date.now() - 259200000).toISOString(), initiated_by_user_id: '202' }, // 3 days ago
+    { id: 3, amount: 150000, description: "Daily sales deposit (Staff 202)", initiated_at: new Date().toISOString(), initiated_by_user_id: '202' }, // Today
+    { id: 4, amount: 1000000, description: "Main capital injection (Admin 101)", initiated_at: new Date().toISOString(), initiated_by_user_id: '101' }, // Today
+    { id: 5, amount: 750000, description: "Q1 Profit transfer", initiated_at: new Date(Date.now() - 1036800000).toISOString(), initiated_by_user_id: '101' }, // 12 days ago
 ];
+
+// --- Printable Component for Deposit Records ---
+const PrintableBankDeposits: React.FC<{ deposits: Deposit[]; userRole: 'admin' | 'staff'; dateRange: { start: string, end: string } }> = ({ deposits, userRole, dateRange }) => {
+    const totalAmount = deposits.reduce((sum, d) => sum + d.amount, 0);
+    const tableStyle: CSSProperties = {
+        border: '1px solid black',
+    };
+    const cellStyle: CSSProperties = {
+        border: '1px solid black',
+        padding: '8px'
+    };
+    const headerStyle: CSSProperties = {
+        borderBottom: '2px solid black',
+        backgroundColor: '#f0f0f0'
+    };
+
+    const reportRange = userRole === 'staff' 
+        ? "Today's Records" 
+        : (dateRange.start || dateRange.end) 
+            ? `From ${dateRange.start || 'Start'} to ${dateRange.end || 'End'}`
+            : 'All Time Records';
+
+    return (
+        <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+            <h1 style={{ textAlign: 'center', marginBottom: '10px' }}>Bank Deposit Report</h1>
+            <p style={{ marginBottom: '20px', textAlign: 'center', fontWeight: 'bold' }}>
+                Report Period: {reportRange}
+            </p>
+            <p style={{ marginBottom: '20px', textAlign: 'center', fontSize: '0.9rem' }}>
+                Generated On: {new Date().toLocaleString()}
+            </p>
+
+            <Table style={tableStyle}>
+                <TableHeader>
+                    <TableRow>
+                        {userRole === "admin" && <TableHead style={{ ...cellStyle, ...headerStyle }}>User ID</TableHead>}
+                        <TableHead style={{ ...cellStyle, ...headerStyle }}>Amount</TableHead>
+                        <TableHead style={{ ...cellStyle, ...headerStyle }}>Description</TableHead>
+                        <TableHead style={{ ...cellStyle, ...headerStyle }}>Initiated At</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {deposits.map(d => (
+                        <TableRow key={d.id}>
+                            {userRole === "admin" && <TableCell style={cellStyle}>{d.initiated_by_user_id}</TableCell>}
+                            <TableCell style={cellStyle}>{formatCurrency(d.amount)}</TableCell>
+                            <TableCell style={cellStyle}>{d.description}</TableCell>
+                            <TableCell style={cellStyle}>{formatDate(d.initiated_at)}</TableCell>
+                        </TableRow>
+                    ))}
+                    <TableRow>
+                        <TableCell colSpan={userRole === "admin" ? 2 : 1} style={{ ...cellStyle, fontWeight: 'bold', textAlign: 'right' }}>Total:</TableCell>
+                        <TableCell style={{ ...cellStyle, fontWeight: 'bold' }}>{formatCurrency(totalAmount)}</TableCell>
+                        <TableCell colSpan={userRole === "admin" ? 2 : 1} style={cellStyle}></TableCell>
+                    </TableRow>
+                </TableBody>
+            </Table>
+
+            <div style={{ marginTop: '50px', paddingTop: '20px', borderTop: '1px dashed #ccc', display: 'flex', justifyContent: 'space-around', fontSize: '0.9rem' }}>
+                <p>Signature (Prepared By): ___________________</p>
+                <p>Signature (Approved By): ___________________</p>
+            </div>
+        </div>
+    );
+};
 
 // --- Component ---
 export default function BankDepositsPage() {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
+    const printAreaRef = useRef<HTMLDivElement>(null);
 
     const [deposits, setDeposits] = useState<Deposit[]>([]);
     const [newDeposit, setNewDeposit] = useState({ amount: "", description: "" });
     const [loading, setLoading] = useState(false);
     const [isFetchingDeposits, setIsFetchingDeposits] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // --- New State for Date Range Filtering ---
+    const [startDate, setStartDate] = useState<string>(''); // YYYY-MM-DD
+    const [endDate, setEndDate] = useState<string>(''); // YYYY-MM-DD
 
     // --- Mock Storage ---
     const mockSaveDeposits = (newDeposits: Deposit[]) => localStorage.setItem('bankDeposits', JSON.stringify(newDeposits));
@@ -136,14 +213,15 @@ export default function BankDepositsPage() {
 
             if (!storedData) mockSaveDeposits(currentDeposits);
 
-            const sortedDeposits = currentDeposits.sort((a, b) => new Date(b.initiated_at).getTime() - new Date(a.initiated_at).getTime());
-
-            let finalDeposits = sortedDeposits;
+            // Staff view is always filtered to today's deposits
+            let depositsToDisplay = currentDeposits;
             if (currentUser.role === 'staff') {
-                finalDeposits = sortedDeposits.filter(d => isToday(d.initiated_at));
+                depositsToDisplay = currentDeposits.filter(d => isToday(d.initiated_at));
             }
 
-            setDeposits(finalDeposits);
+            const sortedDeposits = depositsToDisplay.sort((a, b) => new Date(b.initiated_at).getTime() - new Date(a.initiated_at).getTime());
+
+            setDeposits(sortedDeposits);
         } catch {
             setError("Local storage corrupted. Resetting mock data.");
             setDeposits(MOCK_DEPOSITS);
@@ -223,8 +301,52 @@ export default function BankDepositsPage() {
         await mockFetchDeposits(user);
     };
 
-    // Memoized sorted/filtered deposits
-    const displayedDeposits = useMemo(() => deposits, [deposits]);
+    const handlePrint = () => {
+        const printWindow = window.open('', '_blank');
+        if (printWindow && printAreaRef.current) {
+            const printContent = printAreaRef.current.innerHTML;
+            
+            printWindow.document.write('<html><head><title>Bank Deposit Report</title>');
+            // Inline print styles for better cross-browser print compatibility
+            printWindow.document.write(`<style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { border: 1px solid black; padding: 8px; text-align: left; }
+                th { background-color: #f0f0f0; border-bottom: 2px solid black; }
+                .total-row td { font-weight: bold; }
+            </style>`);
+            printWindow.document.write('</head><body>');
+            printWindow.document.write(printContent);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            
+            printWindow.onload = () => {
+                printWindow.print();
+            };
+        }
+    };
+
+    // Memoized sorted/filtered deposits (Updated to include Date Range filtering)
+    const displayedDeposits = useMemo(() => {
+        let filtered = deposits;
+
+        if (user.role === 'admin') {
+            const start = startDate ? new Date(startDate).getTime() : 0;
+            const end = endDate ? new Date(endDate).getTime() + (24 * 60 * 60 * 1000) : Infinity; // Add one day to include the entire end date
+
+            filtered = deposits.filter(d => {
+                const depositTime = new Date(d.initiated_at).getTime();
+                return depositTime >= start && depositTime < end;
+            });
+        }
+        
+        return filtered;
+    }, [deposits, startDate, endDate, user.role]);
+
+    // Calculate total amount for the currently displayed (filtered) deposits
+    const totalDisplayedAmount = useMemo(() => {
+        return displayedDeposits.reduce((sum, d) => sum + d.amount, 0);
+    }, [displayedDeposits]);
 
     return (
         <div style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
@@ -252,13 +374,47 @@ export default function BankDepositsPage() {
 
                 <Card>
                     <CardHeader>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                             <CardTitle>
-                                {user.role === 'admin' ? 'All Bank Deposits Records' : 'Today\'s Bank Deposits'}
+                                {user.role === 'admin' ? 'Bank Deposits History' : 'Today\'s Bank Deposits'}
                             </CardTitle>
+                            <Button onClick={handlePrint} disabled={isFetchingDeposits || displayedDeposits.length === 0} style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                                Print Records 🖨️
+                            </Button>
                         </div>
+                        {user.role === 'admin' && (
+                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+                                <div style={{ flex: 1 }}>
+                                    <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Start Date</label>
+                                    <Input 
+                                        type="date" 
+                                        value={startDate} 
+                                        onChange={(e) => setStartDate(e.target.value)} 
+                                        disabled={isFetchingDeposits} 
+                                    />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>End Date</label>
+                                    <Input 
+                                        type="date" 
+                                        value={endDate} 
+                                        onChange={(e) => setEndDate(e.target.value)} 
+                                        disabled={isFetchingDeposits} 
+                                    />
+                                </div>
+                                <p style={{ fontSize: '0.875rem', color: PrimaryColor, fontWeight: 'bold' }}>
+                                    Total: {formatCurrency(totalDisplayedAmount)}
+                                </p>
+                            </div>
+                        )}
                     </CardHeader>
                     <CardContent>
+                        {/* Hidden Printable Component linked by ref */}
+                        <div ref={printAreaRef} style={{ display: 'none' }}>
+                            <PrintableBankDeposits deposits={displayedDeposits} userRole={user.role} dateRange={{ start: startDate, end: endDate }} />
+                        </div>
+                        
+                        {/* Display Table (Visible on screen) */}
                         <div style={{ overflowX: 'auto' }}>
                             <Table>
                                 <TableHeader>

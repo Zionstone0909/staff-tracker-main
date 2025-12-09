@@ -5,24 +5,46 @@ import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Customer } from "@/pages/Staff/Customers"
+
+// Import or define Customer type
+interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  account_status: "Active" | "Inactive" | "Pending";
+  totalDue: number;
+  lastPaymentDate: number | null;
+  isFullyPaid: boolean;
+  creationDate: number;
+  createdBy: string;
+  createdByName: string;
+  payments: any[];
+  notes: string;
+}
+
+// Type for the form data (partial Customer)
+type CustomerFormData = Pick<Customer, 
+  'name' | 'phone' | 'email' | 'address' | 'account_status'
+>;
 
 interface CustomerFormProps {
-  onAddCustomer: (customer: Omit<Customer, "id">) => Promise<void>
+  onAddCustomer: (customer: CustomerFormData) => Promise<void>
 }
 
 export default function CustomerForm({ onAddCustomer }: CustomerFormProps) {
-  const [newCustomer, setNewCustomer] = useState<Omit<Customer, "id">>({
+  const [newCustomer, setNewCustomer] = useState<CustomerFormData>({
     name: "",
     phone: "",
     email: "",
     address: "",
-    account_status: "Active", // default
+    account_status: "Active",
   })
 
   const [submitting, setSubmitting] = useState(false)
 
-  const handleChange = (field: keyof Omit<Customer, "id">, value: string) => {
+  const handleChange = (field: keyof CustomerFormData, value: string) => {
     setNewCustomer(prev => ({ ...prev, [field]: value }))
   }
 
@@ -40,7 +62,7 @@ export default function CustomerForm({ onAddCustomer }: CustomerFormProps) {
         phone: "",
         email: "",
         address: "",
-        account_status: "Active", // reset to default
+        account_status: "Active",
       })
     } catch (error) {
       console.error("Failed to add customer:", error)
@@ -77,10 +99,11 @@ export default function CustomerForm({ onAddCustomer }: CustomerFormProps) {
           value={newCustomer.address}
           onChange={(e) => handleChange("address", e.target.value)}
         />
-        {/* Account Status Dropdown */}
         <Select
           value={newCustomer.account_status}
-          onValueChange={(value) => handleChange("account_status", value)}
+          onValueChange={(value: "Active" | "Inactive" | "Pending") => 
+            handleChange("account_status", value)
+          }
         >
           <SelectTrigger>
             <SelectValue placeholder="Select Account Status" />

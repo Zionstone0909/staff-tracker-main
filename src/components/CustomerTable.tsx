@@ -2,7 +2,15 @@
 "use client"
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Customer } from "@/pages/Staff/Customers"
+
+// Define a local Customer interface matching what you need
+interface Customer {
+  id: string
+  name: string
+  phone: string
+  email: string
+  address: string
+}
 
 interface CustomerTableProps {
   customers: Customer[]

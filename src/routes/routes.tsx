@@ -1,8 +1,13 @@
 // src/routes/routes.tsx
+
 import AdminDashboard from "../pages/AdminDashboard";
 import StaffDashboard from "../pages/StaffDashboard";
+import LoginPage from "../pages/LoginPage";
 
-// Admin pages
+// Redirector
+import DashboardRedirector from "../pages/DashboardRedirector";
+
+// ---------------- ADMIN PAGES ----------------
 import AdminBankDepositsPage from "../pages/Admin/BankDeposit";
 import AdminCompanyExpensesPage from "../pages/Admin/CompanyExpenses";
 import AdminCustomerLedgerPage from "../pages/Admin/CustomerLedger";
@@ -19,7 +24,7 @@ import AdminSupplierLedgerPage from "../pages/Admin/SupplierLedger";
 import AdminSuppliersPage from "../pages/Admin/Supplier";
 import AdminStockPage from "../pages/Admin/Stock";
 
-// Staff pages
+// ---------------- STAFF PAGES ----------------
 import StaffBankDepositsPage from "../pages/Staff/BankDeposit";
 import StaffCompanyExpensesPage from "../pages/Staff/CompanyExpenses";
 import StaffCustomerLedgerPage from "../pages/Staff/CustomerLedger";
@@ -43,7 +48,14 @@ interface RouteItem {
 }
 
 export const routeConfig: RouteItem[] = [
-  // Admin
+  // ----------- PUBLIC ROUTES -----------
+  { path: "/", component: LoginPage, allowedRoles: [] },
+  { path: "/login", component: LoginPage, allowedRoles: [] },
+
+  // Fix redirect from /dashboard
+  { path: "/dashboard", component: DashboardRedirector, allowedRoles: ["admin", "staff"] },
+
+  // --- ADMIN ROUTES (All correctly prefixed with /admin/) ---
   { path: "/admin", component: AdminDashboard, allowedRoles: ["admin"] },
   { path: "/admin/bank-deposits", component: AdminBankDepositsPage, allowedRoles: ["admin"] },
   { path: "/admin/company-expenses", component: AdminCompanyExpensesPage, allowedRoles: ["admin"] },
@@ -61,8 +73,16 @@ export const routeConfig: RouteItem[] = [
   { path: "/admin/supplier-ledger", component: AdminSupplierLedgerPage, allowedRoles: ["admin"] },
   { path: "/admin/suppliers", component: AdminSuppliersPage, allowedRoles: ["admin"] },
 
-  // Staff
+  // ----------------------------------------------------
+  // ----------- STAFF ROUTES (CORRECTED) -----------
+  // ----------------------------------------------------
+  
+  // Dashboard
   { path: "/staff", component: StaffDashboard, allowedRoles: ["staff"] },
+
+  // All subsequent staff pages MUST be prefixed with /staff/ to match the navigation
+  // you are using in StaffDashboard (e.g., /staff/customers).
+  { path: "/staff/sales", component: StaffSalesPage, allowedRoles: ["staff"] },
   { path: "/staff/bank-deposits", component: StaffBankDepositsPage, allowedRoles: ["staff"] },
   { path: "/staff/company-expenses", component: StaffCompanyExpensesPage, allowedRoles: ["staff"] },
   { path: "/staff/customer-ledger", component: StaffCustomerLedgerPage, allowedRoles: ["staff"] },
@@ -73,7 +93,6 @@ export const routeConfig: RouteItem[] = [
   { path: "/staff/payment-methods", component: StaffPaymentMethodsPage, allowedRoles: ["staff"] },
   { path: "/staff/payroll", component: StaffPayrollPage, allowedRoles: ["staff"] },
   { path: "/staff/reports", component: StaffReportsPage, allowedRoles: ["staff"] },
-  { path: "/staff/sales", component: StaffSalesPage, allowedRoles: ["staff"] },
   { path: "/staff/stock-adjustment", component: StaffStockAdjustmentPage, allowedRoles: ["staff"] },
   { path: "/staff/stock-movement", component: StaffStockMovementPage, allowedRoles: ["staff"] },
   { path: "/staff/supplier-ledger", component: StaffSupplierLedgerPage, allowedRoles: ["staff"] },

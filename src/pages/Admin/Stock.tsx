@@ -1,6 +1,16 @@
+
 "use client";
 
 import React, { useState, useEffect } from "react";
+
+// Define local placeholder components with inline styles
+const PrimaryColor = '#0B3D91';
+const DestructiveColor = '#dc2626';
+const SuccessColor = '#065f46';
+const ErrorColor = '#b91c1c';
+const LightBg = '#f3f4f6';
+const OutlineBorderColor = '#e5e7eb';
+const MutedColor = '#6b7280';
 
 // --- Interfaces ---
 interface StockItem {
@@ -20,74 +30,172 @@ interface User {
 // --- Utilities ---
 const getInputValue = (e: React.ChangeEvent<HTMLInputElement>): string => e.target.value;
 
-const useRouter = () => ({
-  push: (path: string) => console.log("Simulated Navigation to:", path),
-  back: () => console.log("Simulated Navigation back"),
-});
+// --- STORAGE KEY ---
+const STORAGE_KEY = 'staff_tracker_stock';
 
-// --- Mock Data ---
-const initialStockData: StockItem[] = [
-  { id: "s1", name: "Premium Laptop X", category: "Electronics", quantity: 15, price: 1200000 },
-  { id: "s2", name: "Wireless Keyboard", category: "Accessories", quantity: 5, price: 35000 },
-  { id: "s3", name: "Office Chair Pro", category: "Furniture", quantity: 8, price: 180000 },
-  { id: "s4", name: "External SSD 1TB", category: "Storage", quantity: 30, price: 65000 },
-];
-
-// --- Components ---
+// --- UI Components (using inline styles) ---
 interface ButtonProps {
   children: React.ReactNode;
   onClick?: (event?: React.MouseEvent<HTMLButtonElement>) => void;
   variant?: "ghost" | "outline" | "default" | "destructive" | "secondary";
   size?: "sm" | "default";
-  className?: string;
   disabled?: boolean;
   type?: "button" | "submit" | "reset";
+  style?: React.CSSProperties;
 }
 
-const Button: React.FC<ButtonProps> = ({ children, onClick, className = "", disabled = false, variant = "default", size = "default", type = "button" }) => {
-  let baseStyle = "font-semibold rounded-xl transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transform hover:scale-[1.02] active:scale-[0.98]";
-  let sizeStyle = size === "sm" ? "px-3 py-1 text-sm" : "px-5 py-2.5 text-base";
-  if (variant === "ghost") baseStyle += " hover:bg-gray-100 text-gray-700 shadow-none";
-  else if (variant === "outline") baseStyle += " border border-indigo-300 hover:bg-indigo-50 text-indigo-700 shadow-md";
-  else if (variant === "destructive") baseStyle += " bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/30";
-  else if (variant === "secondary") baseStyle += " bg-indigo-100 hover:bg-indigo-200 text-indigo-800 shadow-sm";
-  else baseStyle += " bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/50";
+const Button: React.FC<ButtonProps> = ({ 
+  children, 
+  onClick, 
+  disabled = false, 
+  variant = "default", 
+  size = "default", 
+  type = "button", 
+  style = {} 
+}) => {
+  let backgroundColor = PrimaryColor;
+  let color = 'white';
+  let border = '1px solid transparent';
+  let padding = size === "sm" ? '0.25rem 0.75rem' : '0.5rem 1rem';
+  let fontSize = size === "sm" ? '0.875rem' : '1rem';
+
+  if (variant === "ghost") {
+    backgroundColor = 'transparent';
+    color = PrimaryColor;
+    border = 'none';
+  } else if (variant === "outline") {
+    backgroundColor = 'transparent';
+    color = PrimaryColor;
+    border = `1px solid ${PrimaryColor}`;
+  } else if (variant === "destructive") {
+    backgroundColor = DestructiveColor;
+  } else if (variant === "secondary") {
+    backgroundColor = LightBg;
+    color = PrimaryColor;
+  }
+
+  const baseStyle: React.CSSProperties = {
+    padding,
+    fontSize,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    backgroundColor: disabled ? '#ccc' : backgroundColor,
+    color: disabled ? '#666' : color,
+    border,
+    borderRadius: '4px',
+    fontWeight: '500',
+    transition: 'background-color 0.2s, opacity 0.2s',
+    opacity: disabled ? 0.6 : 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.5rem',
+    whiteSpace: 'nowrap',
+    ...style
+  };
 
   return (
-    <button type={type} className={`${baseStyle} ${sizeStyle} ${className}`} onClick={onClick} disabled={disabled}>
+    <button type={type} style={baseStyle} onClick={onClick} disabled={disabled}>
       {children}
     </button>
   );
 };
 
-const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { className?: string }> = ({ className = "", ...props }) => (
+const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ style = {}, ...props }) => (
   <input
-    className={`flex h-11 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-base placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    style={{
+      display: 'flex',
+      height: '40px',
+      width: '100%',
+      borderRadius: '4px',
+      border: '1px solid #ccc',
+      backgroundColor: 'white',
+      padding: '0.6rem 0.8rem',
+      fontSize: '1rem',
+      color: '#1f2937',
+      outline: 'none',
+      boxSizing: 'border-box',
+      transition: 'border-color 0.15s ease-in-out',
+      ...style
+    }}
     {...props}
   />
 );
 
-const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = "" }) => (
-  <div className={`rounded-2xl bg-white shadow-2xl border border-gray-100 ${className}`}>{children}</div>
+const Card: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }> = ({ children, style = {} }) => (
+  <div style={{ 
+    borderRadius: '8px', 
+    backgroundColor: 'white', 
+    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', 
+    border: `1px solid ${OutlineBorderColor}`, 
+    marginBottom: '1.5rem',
+    ...style 
+  }}>
+    {children}
+  </div>
 );
-const CardHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => <div className="p-6 border-b border-gray-100">{children}</div>;
-const CardTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => <h2 className="text-2xl font-bold text-indigo-800">{children}</h2>;
-const CardContent: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = "" }) => <div className={`p-6 ${className}`}>{children}</div>;
 
-const Table: React.FC<{ children: React.ReactNode }> = ({ children }) => <table className="min-w-full divide-y divide-gray-200">{children}</table>;
+const CardHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{ padding: '1.5rem', borderBottom: `1px solid ${OutlineBorderColor}` }}>
+    {children}
+  </div>
+);
+
+const CardTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: PrimaryColor, margin: 0 }}>
+    {children}
+  </h2>
+);
+
+const CardContent: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }> = ({ children, style = {} }) => (
+  <div style={{ padding: '1.5rem', ...style }}>
+    {children}
+  </div>
+);
+
+const Table: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <table style={{ minWidth: '100%', width: '100%', borderCollapse: 'collapse' }}>
+    {children}
+  </table>
+);
+
 const TableHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => <thead>{children}</thead>;
+
 const TableHead: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider bg-indigo-50">{children}</th>
-);
-const TableRow: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <tr className="even:bg-gray-50 hover:bg-indigo-100/50 transition-colors duration-200 border-b last:border-b-0">{children}</tr>
-);
-const TableBody: React.FC<{ children: React.ReactNode }> = ({ children }) => <tbody className="bg-white divide-y divide-gray-200">{children}</tbody>;
-const TableCell: React.FC<{ children: React.ReactNode; className?: string; colSpan?: number }> = ({ children, className = "", colSpan }) => (
-  <td colSpan={colSpan} className={`px-6 py-4 text-base text-gray-800 ${className}`}>{children}</td>
+  <th style={{ 
+    padding: '0.75rem 1.5rem', 
+    textAlign: 'left', 
+    fontSize: '0.875rem', 
+    fontWeight: '600', 
+    color: MutedColor, 
+    textTransform: 'uppercase', 
+    backgroundColor: '#f9fafb', 
+    borderBottom: `2px solid ${OutlineBorderColor}` 
+  }}>
+    {children}
+  </th>
 );
 
-// --- Modal ---
+const TableRow: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <tr style={{ borderBottom: `1px solid ${OutlineBorderColor}`, transition: 'background-color 0.15s' }}>
+    {children}
+  </tr>
+);
+
+const TableBody: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <tbody style={{ backgroundColor: 'white' }}>{children}</tbody>
+);
+
+const TableCell: React.FC<{ 
+  children: React.ReactNode; 
+  colSpan?: number; 
+  style?: React.CSSProperties 
+}> = ({ children, colSpan, style = {} }) => (
+  <td colSpan={colSpan} style={{ padding: '1rem 1.5rem', fontSize: '0.875rem', color: '#1f2937', ...style }}>
+    {children}
+  </td>
+);
+
+// --- Modal Component ---
 interface ModalState {
   type: "error" | "confirm" | "info";
   text: string;
@@ -99,22 +207,59 @@ const AlertModal: React.FC<{ modal: ModalState | null; onClose: () => void }> = 
 
   let title = "";
   let buttonText = "OK";
-  let style = "bg-indigo-600 hover:bg-indigo-700";
+  let buttonColor = PrimaryColor;
 
-  if (modal.type === "error") { title = "Validation Error"; style = "bg-red-600 hover:bg-red-700"; }
-  else if (modal.type === "confirm") { title = "Confirm Action"; buttonText = "Delete"; style = "bg-red-600 hover:bg-red-700"; }
-  else { title = "Information"; }
+  if (modal.type === "error") { 
+    title = "Validation Error"; 
+    buttonColor = DestructiveColor; 
+  } else if (modal.type === "confirm") { 
+    title = "Confirm Action"; 
+    buttonText = "Delete"; 
+    buttonColor = DestructiveColor; 
+  } else { 
+    title = "Information"; 
+  }
 
-  const handleAction = () => { if (modal.type === "confirm" && modal.onConfirm) modal.onConfirm(); onClose(); };
+  const handleAction = () => { 
+    if (modal.type === "confirm" && modal.onConfirm) {
+      modal.onConfirm(); 
+    }
+    onClose(); 
+  };
 
   return (
-    <div style={{ backdropFilter: "blur(5px)" }} className="fixed inset-0 bg-gray-900 bg-opacity-40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-3xl max-w-sm w-full p-6 transform transition-all duration-300 scale-100">
-        <h3 className={`text-2xl font-extrabold mb-3 ${modal.type === "error" ? "text-red-700" : "text-indigo-800"}`}>{title}</h3>
-        <p className="text-gray-700 mb-6">{modal.text}</p>
-        <div className="flex justify-end space-x-3">
-          {modal.type === "confirm" && <Button variant="secondary" onClick={onClose}>Cancel</Button>}
-          <Button onClick={handleAction} className={style}>{buttonText}</Button>
+    <div style={{ 
+      position: 'fixed', 
+      inset: 0, 
+      backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      zIndex: 50, 
+      padding: '1rem' 
+    }}>
+      <div style={{ 
+        backgroundColor: 'white', 
+        borderRadius: '8px', 
+        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)', 
+        maxWidth: '28rem', 
+        width: '100%', 
+        padding: '1.5rem' 
+      }}>
+        <h3 style={{ 
+          fontSize: '1.5rem', 
+          fontWeight: 'bold', 
+          marginBottom: '1rem', 
+          color: modal.type === "error" ? DestructiveColor : PrimaryColor 
+        }}>
+          {title}
+        </h3>
+        <p style={{ color: '#4b5563', marginBottom: '1.5rem' }}>{modal.text}</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+          {modal.type === "confirm" && (
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          )}
+          <Button onClick={handleAction} style={{ backgroundColor: buttonColor }}>{buttonText}</Button>
         </div>
       </div>
     </div>
@@ -123,19 +268,43 @@ const AlertModal: React.FC<{ modal: ModalState | null; onClose: () => void }> = 
 
 // --- Main Component ---
 export default function StockPage() {
-  const router = useRouter();
-  const [stock, setStock] = useState<StockItem[]>(initialStockData);
+  const [stock, setStock] = useState<StockItem[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [invalidFields, setInvalidFields] = useState<string[]>([]);
   const [modal, setModal] = useState<ModalState | null>(null);
-  const [newItem, setNewItem] = useState<Omit<StockItem, "id">>({ name: "", category: "", quantity: 0, price: 0 });
+  const [newItem, setNewItem] = useState<Omit<StockItem, "id">>({ 
+    name: "", 
+    category: "", 
+    quantity: 0, 
+    price: 0 
+  });
 
+  // Load from localStorage on mount
   useEffect(() => {
     const userString = localStorage.getItem("currentUser");
-    const user: User | null = userString ? JSON.parse(userString) : { id: "mock-admin-123", email: "admin@mock.com", role: "admin" };
+    const user: User | null = userString 
+      ? JSON.parse(userString) 
+      : { id: "mock-admin-123", email: "admin@mock.com", role: "admin" };
     setCurrentUser(user);
+
+    const savedStock = localStorage.getItem(STORAGE_KEY);
+    if (savedStock) {
+      try {
+        setStock(JSON.parse(savedStock));
+      } catch (error) {
+        console.error("Error loading stock data:", error);
+        setStock([]);
+      }
+    }
   }, []);
+
+  // Save to localStorage whenever stock changes
+  useEffect(() => {
+    if (stock.length >= 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stock));
+    }
+  }, [stock]);
 
   const validateStockItem = (item: StockItem | Omit<StockItem, "id">) => {
     const invalid: string[] = [];
@@ -147,91 +316,176 @@ export default function StockPage() {
   };
 
   const handleAddItem = () => {
-    if (currentUser?.role !== "admin") return;
+    if (currentUser?.role !== "admin") {
+      setModal({ type: "error", text: "Only administrators can add items." });
+      return;
+    }
+
     const invalid = validateStockItem(newItem);
     if (invalid.length > 0) {
       setInvalidFields(invalid);
-      setModal({ type: "error", text: "Please correct fields: " + invalid.join(", ") });
+      setModal({ type: "error", text: `Please correct the following fields: ${invalid.join(", ")}` });
       return;
     }
+
     setInvalidFields([]);
     const id = Date.now().toString();
-    setStock(prev => [...prev, { ...newItem, id }]);
+    const updatedStock = [...stock, { ...newItem, id }];
+    setStock(updatedStock);
     setNewItem({ name: "", category: "", quantity: 0, price: 0 });
     setModal({ type: "info", text: `Item "${newItem.name}" added successfully.` });
   };
 
   const handleEditInput = (field: keyof Omit<StockItem, "id">, id: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = getInputValue(e);
-    setStock(prev => prev.map(item => (item.id === id ? { ...item, [field]: field === "quantity" || field === "price" ? Number(val) : val } : item)));
+    setStock(prev => prev.map(item => {
+      if (item.id === id) {
+        if (field === "quantity" || field === "price") {
+          return { ...item, [field]: Number(val) || 0 };
+        }
+        return { ...item, [field]: val };
+      }
+      return item;
+    }));
   };
 
   const handleSave = (item: StockItem) => {
     const invalid = validateStockItem(item);
     if (invalid.length > 0) {
       setInvalidFields(invalid);
-      setModal({ type: "error", text: "Please correct fields: " + invalid.join(", ") });
+      setModal({ type: "error", text: `Please correct the following fields: ${invalid.join(", ")}` });
       return;
     }
+
     setInvalidFields([]);
     setEditingId(null);
     setModal({ type: "info", text: `Item "${item.name}" updated successfully.` });
   };
 
   const deleteItemFromStock = (id: string) => {
-    setStock(prev => prev.filter(item => item.id !== id));
+    const updatedStock = stock.filter(item => item.id !== id);
+    setStock(updatedStock);
     setModal({ type: "info", text: "Item deleted successfully." });
   };
 
-  const handleDelete = (id: string, name: string) => setModal({ type: "confirm", text: `Delete "${name}"?`, onConfirm: () => deleteItemFromStock(id) });
+  const handleDelete = (id: string, name: string) => {
+    setModal({ 
+      type: "confirm", 
+      text: `Are you sure you want to delete "${name}"?`, 
+      onConfirm: () => deleteItemFromStock(id) 
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setInvalidFields([]);
+    // Reload from localStorage to revert changes
+    const savedStock = localStorage.getItem(STORAGE_KEY);
+    if (savedStock) {
+      try {
+        setStock(JSON.parse(savedStock));
+      } catch (error) {
+        console.error("Error reloading stock data:", error);
+      }
+    }
+  };
 
   const showForm = currentUser?.role === "admin";
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
+    <div style={{ minHeight: '100vh', backgroundColor: LightBg, fontFamily: 'Inter, sans-serif' }}>
       <AlertModal modal={modal} onClose={() => setModal(null)} />
 
-      <nav className="border-b border-indigo-200 bg-white p-4 flex justify-between items-center shadow-lg sticky top-0 z-10">
-        <Button variant="ghost" onClick={() => router.back()} className="text-xl text-indigo-700 hover:text-indigo-900 px-2">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+      {/* Top Navigation */}
+      <nav style={{ 
+        borderBottom: '1px solid #e5e7eb', 
+        backgroundColor: '#fff', 
+        padding: '1rem', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)' 
+      }}>
+        <Button
+          variant="ghost"
+          style={{ color: PrimaryColor }}
+          onClick={() => window.history.back()}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
           </svg>
-          <span className="hidden sm:inline">Back to Dashboard</span>
+          <span>Back</span>
         </Button>
-        <div className="text-gray-600 text-sm italic">
-          User Role: <span className="font-bold text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full">{currentUser?.role || 'Guest'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <span style={{ fontSize: '0.875rem', color: MutedColor }}>
+            Role: <strong style={{ color: PrimaryColor }}>{currentUser?.role || 'Guest'}</strong>
+          </span>
+          <Button variant="destructive" onClick={() => {
+            localStorage.removeItem("currentUser");
+            window.location.href = "/login";
+          }}>
+            Logout
+          </Button>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <h1 className="text-5xl font-extrabold text-indigo-900 mb-10 tracking-tight">Inventory Stock Management</h1>
+      <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1rem' }}>
+        <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: PrimaryColor, marginBottom: '2rem' }}>
+          Inventory Stock Management
+        </h1>
 
         {/* Add Item Form */}
         {showForm && (
-          <Card className="mb-12 shadow-xl shadow-indigo-100/50">
-            <CardHeader><CardTitle>Add New Stock Item</CardTitle></CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {(["name", "category", "quantity", "price"] as const).map(field => (
+          <Card>
+            <CardHeader>
+              <CardTitle>Add New Stock Item</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                {([
+                  ["name", "Name", "text"], 
+                  ["category", "Category", "text"], 
+                  ["quantity", "Quantity", "number"], 
+                  ["price", "Price (₦)", "number"]
+                ] as const).map(([field, label, inputType]) => (
                   <div key={field}>
-                    <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1 capitalize">{field}</label>
+                    <label 
+                      htmlFor={field} 
+                      style={{ 
+                        display: 'block', 
+                        fontSize: '0.875rem', 
+                        fontWeight: '600', 
+                        color: '#374151', 
+                        marginBottom: '0.5rem' 
+                      }}
+                    >
+                      {label}
+                    </label>
                     <Input
                       id={field}
-                      type={field === "quantity" || field === "price" ? "number" : "text"}
-                      placeholder={`Enter ${field}`}
-                      min={0}
+                      type={inputType}
+                      placeholder={`Enter ${label.toLowerCase()}`}
+                      min={inputType === "number" ? 0 : undefined}
+                      step={field === "price" ? "0.01" : "1"}
                       value={newItem[field] === 0 && (field === "quantity" || field === "price") ? "" : newItem[field]}
-                      className={invalidFields.includes(field) ? "border-red-500 focus:ring-red-500" : ""}
+                      style={{ borderColor: invalidFields.includes(field) ? DestructiveColor : '#ccc' }}
                       onChange={e => {
                         const val = getInputValue(e);
-                        setNewItem(prev => ({ ...prev, [field]: field === "quantity" || field === "price" ? (val === "" ? 0 : Number(val)) : val }));
+                        setNewItem(prev => ({ 
+                          ...prev, 
+                          [field]: field === "quantity" || field === "price" 
+                            ? (val === "" ? 0 : Number(val)) 
+                            : val 
+                        }));
                       }}
                     />
                   </div>
                 ))}
               </div>
-              <Button onClick={handleAddItem} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-500/50 py-3 text-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              <Button onClick={handleAddItem} style={{ marginTop: '1.5rem', width: '100%', backgroundColor: SuccessColor }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
                 <span>Add New Item</span>
               </Button>
             </CardContent>
@@ -239,53 +493,82 @@ export default function StockPage() {
         )}
 
         {/* Stock Table */}
-        <Card className="shadow-2xl shadow-gray-200">
-          <CardHeader><CardTitle>Current Stock Items ({stock.length})</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto rounded-b-2xl">
+        <Card style={{ marginBottom: 0 }}>
+          <CardHeader>
+            <CardTitle>Current Stock Items ({stock.length})</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: 0 }}>
+            <div style={{ overflowX: 'auto' }}>
               <Table>
                 <TableHeader>
-                  <TableRow>{["Name", "Category", "Quantity", "Price (₦)", "Actions"].map(h => <TableHead key={h}>{h}</TableHead>)}</TableRow>
+                  <TableRow>
+                    {["Name", "Category", "Quantity", "Price (₦)", "Actions"].map(h => (
+                      <TableHead key={h}>{h}</TableHead>
+                    ))}
+                  </TableRow>
                 </TableHeader>
                 <TableBody>
                   {stock.length > 0 ? stock.map(item => (
                     <TableRow key={item.id}>
-                      {(["name","category","quantity","price"] as const).map(field => (
-                        <TableCell key={field} className={field==='quantity'||field==='price'?'font-mono':''}>
-                          {editingId === item.id && (field==='name' || field==='category' || field==='quantity' || field==='price') ? (
+                      {(["name", "category", "quantity", "price"] as const).map(field => (
+                        <TableCell key={field}>
+                          {editingId === item.id ? (
                             <Input
                               type={field === "quantity" || field === "price" ? "number" : "text"}
                               value={item[field]}
+                              min={field === "quantity" || field === "price" ? 0 : undefined}
+                              step={field === "price" ? "0.01" : "1"}
                               onChange={handleEditInput(field, item.id)}
+                              style={{ borderColor: invalidFields.includes(field) ? DestructiveColor : '#ccc' }}
                             />
                           ) : (
-                            field === 'price' ? `₦${item.price.toLocaleString()}` :
-                            field === 'quantity' ? <span className={item.quantity < 10 ? "font-extrabold text-red-600" : "font-semibold text-green-700"}>{item.quantity}</span> :
-                            item[field]
+                            field === 'price' ? `₦${item.price.toLocaleString('en-NG', { minimumFractionDigits: 2 })}` :
+                            field === 'quantity' ? (
+                              <span style={{ 
+                                fontWeight: '600', 
+                                color: item.quantity < 10 ? DestructiveColor : SuccessColor 
+                              }}>
+                                {item.quantity}
+                              </span>
+                            ) : item[field]
                           )}
                         </TableCell>
                       ))}
-                      <TableCell className="space-x-2 w-full text-right">
+                      <TableCell>
                         {currentUser?.role === "admin" && (
                           editingId === item.id ? (
-                            <>
-                              <Button size="sm" onClick={()=>handleSave(item)} className="bg-emerald-600 hover:bg-emerald-700 shadow-md">Save</Button>
-                              <Button size="sm" variant="secondary" onClick={()=>{setEditingId(null); setInvalidFields([])}}>Cancel</Button>
-                            </>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <Button size="sm" onClick={() => handleSave(item)} style={{ backgroundColor: SuccessColor }}>
+                                Save
+                              </Button>
+                              <Button size="sm" variant="secondary" onClick={handleCancelEdit}>
+                                Cancel
+                              </Button>
+                            </div>
                           ) : (
-                            <>
-                              <Button size="sm" onClick={()=>setEditingId(item.id)}>Edit</Button>
-                              <Button size="sm" variant="destructive" onClick={()=>handleDelete(item.id,item.name)}>Delete</Button>
-                            </>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <Button size="sm" onClick={() => setEditingId(item.id)}>
+                                Edit
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => handleDelete(item.id, item.name)}>
+                                Delete
+                              </Button>
+                            </div>
                           )
                         )}
-                        {currentUser?.role === "staff" && editingId !== item.id && <span className="text-gray-400 italic text-sm">View Only</span>}
+                        {currentUser?.role === "staff" && (
+                          <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: '0.875rem' }}>
+                            View Only
+                          </span>
+                        )}
                       </TableCell>
                     </TableRow>
                   )) : (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-gray-500 py-12 text-lg">
-                        Inventory is empty. Add a new item above!
+                      <TableCell colSpan={5} style={{ textAlign: 'center', padding: '3rem', color: MutedColor }}>
+                        {showForm 
+                          ? "Inventory is empty. Add a new item above!" 
+                          : "No stock items available."}
                       </TableCell>
                     </TableRow>
                   )}

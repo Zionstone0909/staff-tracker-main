@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, CSSProperties } from "react";
-
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import { AlertCircle, Package, Plus, Minus, Trash2 } from "lucide-react";
 
 // --- Styling Constants ---

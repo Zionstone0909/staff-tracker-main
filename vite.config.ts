@@ -11,4 +11,19 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+    },
+  },
+  // 👇 Add this to fix the pdfmake source map error
+  build: {
+    sourcemap: false,
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      sourcemap: false,
+    },
+  },
 });

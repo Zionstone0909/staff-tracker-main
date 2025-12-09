@@ -1,23 +1,28 @@
 // src/pages/LoginPage.tsx
 "use client";
 
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth, Role } from "../contexts/AuthContext";
+import React, { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+// Import the specific Role type from your context
+import { useAuth, Role } from "../contexts/AuthContext"; 
 
-interface UserCredential {
-  role: "Admin" | "Staff";
+// --- Use the lowercase Role types defined in your AuthContext for consistency ---
+type UppercaseRole = "Admin" | "Staff";
+
+interface MockUserCredential {
+  role: UppercaseRole;
   email: string;
   password: string;
   id: string;
 }
 
-// ✅ Default users
-const defaultUsers: UserCredential[] = [
+// ✅ Default users now use the MockUserCredential type
+const defaultUsers: MockUserCredential[] = [
   { role: "Admin", email: "d62809238@gmail.com", password: "admin12345", id: "1" },
   { role: "Staff", email: "staff1@gmail.com", password: "staff001", id: "101" },
   { role: "Staff", email: "staff2@gmail.com", password: "staff211", id: "102" },
   { role: "Staff", email: "staff3@gmail.com", password: "staff131", id: "103" },
+  // ... rest of staff users ...
   { role: "Staff", email: "staff4@gmail.com", password: "staff491", id: "104" },
   { role: "Staff", email: "staff5@gmail.com", password: "staff890", id: "105" },
   { role: "Staff", email: "staff6@gmail.com", password: "staff006", id: "106" },
@@ -28,25 +33,28 @@ const defaultUsers: UserCredential[] = [
 ];
 
 // Helper to find user by role
-const findUserByRole = (role: "Admin" | "Staff") =>
+const findUserByRole = (role: UppercaseRole) =>
   defaultUsers.find((user) => user.role === role);
+
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation(); // Used to redirect user back to where they came from
   const { login } = useAuth();
 
-  // 🛑 Start with empty credentials to prevent automatic login
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"Admin" | "Staff">("Admin");
+  const [role, setRole] = useState<UppercaseRole>("Admin"); // Track the current form type
   const [error, setError] = useState<string | null>(null);
 
+  // Define where the user should go after successful login
+  const redirectPath = location.state?.from || "/dashboard";
+
   // Form submission
-  const handleSubmit = (e?: React.FormEvent, userToLogin?: UserCredential) => {
+  const handleSubmit = (e?: React.FormEvent, userToLogin?: MockUserCredential) => {
     if (e) e.preventDefault();
     setError(null);
 
-    // Use passed user for quick login or find from form
     const user =
       userToLogin || defaultUsers.find((u) => u.email === email && u.password === password);
 
@@ -55,20 +63,23 @@ export default function LoginPage() {
       return;
     }
 
-    // Map to context Role type
-    const roleMap: Record<"Admin" | "Staff", Role> = { Admin: "admin", Staff: "staff" };
+    // --- CORRECTION 1: Map uppercase roles to the lowercase 'Role' type defined in AuthContext ---
+    const roleMap: Record<UppercaseRole, Role> = { Admin: "admin", Staff: "staff" };
+    const userRoleInContext = roleMap[user.role];
+
     login({
       id: user.id,
       email: user.email,
-      role: roleMap[user.role],
+      role: userRoleInContext,
     });
 
-    // Navigate based on role
-    navigate(user.role === "Admin" ? "/admin" : "/staff");
+    // --- CORRECTION 2: Navigate using the determined redirectPath ---
+    // This allows the ProtectedRoute logic to bring them back to the page they wanted.
+    navigate(redirectPath, { replace: true });
   };
 
   // Prefill only when toggle button clicked
-  const handlePrefill = (user: UserCredential) => {
+  const handlePrefill = (user: MockUserCredential) => {
     setEmail(user.email);
     setPassword(user.password);
     setRole(user.role);
@@ -86,7 +97,8 @@ export default function LoginPage() {
         animation: "fadeIn 0.8s ease-out",
       }}
     >
-      <div
+      {/* ... (rest of the UI/JSX is fine and does not need correction) ... */}
+       <div
         style={{
           width: "100%",
           maxWidth: "400px",
@@ -113,7 +125,7 @@ export default function LoginPage() {
           {["Admin", "Staff"].map((r) => (
             <button
               key={r}
-              onClick={() => handlePrefill(findUserByRole(r as "Admin" | "Staff")!)}
+              onClick={() => handlePrefill(findUserByRole(r as UppercaseRole)!)}
               style={{
                 padding: "8px 16px",
                 borderRadius: "20px",
@@ -205,7 +217,7 @@ export default function LoginPage() {
           <p style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "10px" }}>Quick Login Options:</p>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px" }}>
             {["Admin", "Staff"].map((r) => {
-              const user = findUserByRole(r as "Admin" | "Staff")!;
+              const user = findUserByRole(r as UppercaseRole)!;
               return (
                 <button
                   key={r}

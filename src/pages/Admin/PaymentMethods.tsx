@@ -1,484 +1,435 @@
+// C:\Users\HP\Videos\staff-tracker-main\src\pages\Admin\PaymentMethods.tsx
 "use client";
+import React, { FC, useEffect, useMemo, useState, CSSProperties, ChangeEvent } from "react";
+import { 
+    collection, 
+    query, 
+    onSnapshot, 
+    orderBy, 
+    DocumentData,
+    QueryDocumentSnapshot,
+} from 'firebase/firestore';
+// ✅ Import DB instance from your firebase setup file
+import { db } from '../../firebase'; 
 
-import React, { useState, useEffect, useCallback, CSSProperties } from "react";
-import { // useMemo removed from imports
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer,
-    PieChart,
-    Pie,
-    Cell,
-} from "recharts";
-// Receipt removed from imports
-import { DollarSign, Send, Landmark, Download, User, CreditCard } from "lucide-react";
+// --- Icon Imports (Assuming lucide-react or similar) ---
+import { 
+    DollarSign, 
+    CreditCard, 
+    Send, 
+    Landmark, 
+    Download
+} from 'lucide-react';
 
-// --- Styling Constants ---
-const PrimaryColor = '#3b82f6'; // Blue-600
-const SuccessColor = '#10b981'; // Green-600 (Cash)
-const PosColor = '#f59e0b'; // Amber-500 (POS)
-const CheckColor = '#8b5cf6'; // Violet-500 (Check)
-const OutlineBorderColor = '#e5e7eb'; // Gray-200
-const TextColor = '#111827'; // Gray-900
-const MutedTextColor = '#6b7280'; // Gray-500
-const BackgroundColor = '#f9fafb'; // Gray-50
-const CardBg = '#fff';
+/** ---------------- CONSTANTS ---------------- */
+const SALES_COLLECTION = "sales"; // Collection to get payment data from
+const CUSTOMERS_COLLECTION = "customers"; // Collection to get customer names from
 
+const PaymentMethodColors = {
+    Cash: '#10b981',    
+    POS: '#f59e0b',     
+    Transfer: '#3b82f6',
+    Check: '#8b5cf6',   
+};
 
-// Mock the useRouter functionality for non-Next-js environments
-const useMockRouter = () => ({
-    back: () => window.history.back(),
+/** ---------------- Interfaces ---------------- */
+export interface Customer {
+    id: string; // Firestore Document ID
+    name: string;
+    currentBalance: number; // The running balance/debt of the customer
+}
+
+export interface Sale {
+    _id: string;
+    customer_id: string; 
+    saleDate: string; 
+    totalAmount: number;
+    paidAmount: number;
+    dueAmount: number;
+    status: "Pending" | "Completed";
+    paymentMethod: "Cash" | "POS" | "Transfer" | "Check"; // Crucial field
+}
+
+export interface CustomerPayment {
+    id: string; // Sale ID / Invoice ID
+    customerName: string;
+    customer_id: string;
+    date: string;
+    method: "Cash" | "POS" | "Transfer" | "Check";
+    amount: number;
+    balance: number;
+}
+
+interface SummaryData {
+    method: keyof typeof PaymentMethodColors;
+    icon: React.ReactNode;
+    totalAmount: number;
+    color: string;
+}
+
+/** ---------------- Utility Functions (Styling & Formatting) ---------------- */
+const formatCurrency = (n: number) => ` ৳ ${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+const formatShortDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-US', {
+    year: '2-digit', month: 'short', day: 'numeric'
 });
 
 
-// ------------------- LOCAL UI COMPONENTS -------------------
+/** ------------- Inline Components ------------- */
+interface CardProps { children: React.ReactNode; style?: React.CSSProperties; }
+const Card: FC<CardProps> = ({ children, style }) => (<div style={{borderRadius: 12, border: "1px solid #ccc", background: "#fff", padding: 16, boxShadow: "0 2px 6px rgba(0,0,0,0.08)", maxWidth: 1200, margin: "20px auto", ...style,}}>{children}</div>);
+const CardHeader: FC<CardProps> = ({ children, style }) => (<div style={{ padding: 12, borderBottom: "1px solid #eee", ...style }}>{children}</div>);
+const CardTitle: FC<CardProps> = ({ children, style }) => (<h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, ...style }}>{children}</h2>);
+const CardContent: FC<CardProps> = ({ children, style }) => (<div style={{ padding: 12, ...style }}>{children}</div>);
+const Button: FC<{ onClick?: (e?: any) => void; children: React.ReactNode; disabled?: boolean; style?: React.CSSProperties; type?: "button" | "submit" | "reset"; }> = ({ onClick, children, disabled, style, type = "button" }) => (<button type={type} onClick={onClick} disabled={disabled} style={{ padding: "8px 12px", borderRadius: 6, border: "none", background: disabled ? "#bdbdbd" : "#2563eb", color: "#fff", cursor: disabled ? "not-allowed" : "pointer", display: 'flex', alignItems: 'center', ...style, }}>{children}</button>);
+const Input: FC<{ value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; placeholder?: string; style?: CSSProperties; type?: string; readOnly?: boolean; }> = ({ value, onChange, placeholder, style, type = "text", readOnly = false }) => (<input value={value} onChange={onChange} placeholder={placeholder} type={type} readOnly={readOnly} style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc", width: "100%", ...style, }} />);
+const Table: FC<CardProps> = ({ children, style }) => (<table style={{ width: "100%", borderCollapse: "collapse", ...style }}>{children}</table>);
+const TableRow: FC<CardProps & { style?: React.CSSProperties }> = ({ children, style }) => (<tr style={{ ...style }}>{children}</tr>);
+const TableHeadCell: FC<{ children: React.ReactNode; onClick?: () => void; style?: React.CSSProperties }> = ({ children, onClick, style, }) => (<th onClick={onClick} style={{ padding: "10px 8px", border: "1px solid #cfcfcf", textAlign: "left", background: "#f5f7fb", cursor: onClick ? "pointer" : "default", userSelect: "none", ...style, }}>{children}</th>);
+const TableCell: FC<{ children: React.ReactNode; colSpan?: number; style?: React.CSSProperties }> = ({ children, colSpan, style }) => (<td colSpan={colSpan} style={{ padding: "10px 8px", border: "1px solid #e5e7eb", ...style }}>{children}</td>);
 
-const Button: React.FC<React.PropsWithChildren<{ onClick?: () => void, style?: CSSProperties, variant?: 'destructive' | 'outline' | 'ghost' | 'default' | 'active', disabled?: boolean, title?: string, type?: "button" | "submit" | "reset" }>> = ({ children, onClick, style, variant = 'default', disabled = false, title = "" }) => {
-    let baseStyle: CSSProperties = {
-        padding: '0.5rem 1rem',
-        fontSize: 14,
-        fontWeight: 600,
-        borderRadius: 8,
-        transition: 'all 0.15s ease-in-out',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        border: 'none',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-    };
+
+const PaymentCard: FC<{ data: SummaryData; hideAmount: boolean }> = ({ data, hideAmount }) => (
+    <div style={{ flex: 1, minWidth: '200px', padding: '16px', borderRadius: '12px', background: data.color, color: '#fff', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '14px', fontWeight: 600 }}>{data.method}</div>
+            {data.icon}
+        </div>
+        <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '8px' }}>
+            {hideAmount ? '***' : formatCurrency(data.totalAmount)}
+        </div>
+        <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>Total Payments</div>
+    </div>
+);
+
+const MockChart: FC<{ title: string; height: number }> = ({ title, height }) => (
+    <div style={{ 
+        height: height, 
+        border: '1px dashed #ccc', 
+        borderRadius: 8, 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        color: '#6b7280',
+        fontSize: 14
+    }}>
+        {title} Placeholder
+    </div>
+);
+
+/** ------------- Main Component ------------- */
+export default function PaymentMethodsPage({
+    currentUserRole = "Admin", // Default role
+}: { currentUserRole?: "Admin" | "Staff"; }) {
     
-    switch (variant) {
-        case "outline":
-            baseStyle = { ...baseStyle, border: '1px solid ' + OutlineBorderColor, backgroundColor: CardBg, color: MutedTextColor };
-            break;
-        case "ghost":
-            baseStyle = { ...baseStyle, backgroundColor: 'transparent', color: MutedTextColor, boxShadow: 'none' };
-            break;
-        case "active":
-             baseStyle = { ...baseStyle, backgroundColor: PrimaryColor, color: '#fff', border: '1px solid ' + PrimaryColor };
-             break;
-        case "default":
-        default:
-            baseStyle = { ...baseStyle, backgroundColor: PrimaryColor, color: '#fff' };
-            break;
-    }
+    const [allSales, setAllSales] = useState<Sale[]>([]);
+    const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    return (
-        <button
-            onClick={onClick ? onClick : undefined}
-            style={{ ...baseStyle, ...style }}
-            disabled={disabled}
-            title={title}
-            type="button" 
-        >
-            {children}
-        </button>
-    );
-};
-
-const Card: React.FC<React.PropsWithChildren<{ style?: CSSProperties }>> = ({ children, style }) => (
-    <div style={{ borderRadius: 12, backgroundColor: CardBg, border: '1px solid ' + OutlineBorderColor, ...style }}>{children}</div>
-);
-const CardHeader: React.FC<React.PropsWithChildren<{ style?: CSSProperties }>> = ({ children, style }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', padding: 24, ...style }}>{children}</div>
-);
-const CardTitle: React.FC<React.PropsWithChildren<{ style?: CSSProperties }>> = ({ children, style }) => (
-    <h3 style={{ fontSize: 24, fontWeight: 600, lineHeight: 1.5, margin: 0, ...style }}>{children}</h3>
-);
-const CardContent: React.FC<React.PropsWithChildren<{ style?: CSSProperties }>> = ({ children, style }) => (
-    <div style={{ padding: 24, paddingTop: 0, ...style }}>{children}</div>
-);
-
-
-// ------------------- TYPES -------------------
-
-type DateRange = 'day' | 'week' | 'all';
-
-interface PaymentSummary {
-    cashTotal: number;
-    transferTotal: number;
-    posTotal: number;
-    checkTotal: number;
-}
-
-interface ChartData {
-    date: string;
-    cash: number;
-    transfer: number;
-    pos: number;
-    check: number;
-    [key: string]: any; 
-}
-
-interface CurrentUser {
-    userId: number;
-    email: string;
-    role: "admin" | "staff";
-}
-
-interface PieDataItem {
-    name: string;
-    value: number;
-    percent?: number;
-    [key: string]: any; 
-}
-
-// ------------------- COMPONENT -------------------
-export default function PaymentMethodsPage() {
-    const router = useMockRouter();
-    const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-    const [dateRange, setDateRange] = useState<DateRange>('day'); 
-    const [paymentSummary, setPaymentSummary] = useState<PaymentSummary>({
-        cashTotal: 0, transferTotal: 0, posTotal: 0, checkTotal: 0,
-    });
-    const [paymentData, setPaymentData] = useState<ChartData[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    const isAdmin = currentUser?.role === "admin";
-    const isStaff = currentUser?.role === "staff";
-
-    // ------------------- AUTH & ROLE TOGGLE -------------------
+    const [searchTerm, setSearchTerm] = useState("");
+    const [filterMethod, setFilterMethod] = useState<string>("All");
+    const [sortField, setSortField] = useState<keyof CustomerPayment | null>("date");
+    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
     
-    const setRole = useCallback((role: "admin" | "staff") => {
-        const mockUser: CurrentUser = { 
-            userId: role === "admin" ? 1 : 2, email: role === "admin" ? "admin@store.com" : "staff@store.com", role: role 
+    const isStaff = currentUserRole === "Staff";
+
+    /** Firestore Real-time Listeners (onSnapshot) */
+    useEffect(() => {
+        // 1. Listen for Sales
+        // Filter out sales where paidAmount is 0 if possible, but fetching all and filtering in-memory is safer
+        const salesQuery = query(collection(db, SALES_COLLECTION), orderBy('saleDate', 'desc'));
+        const unsubscribeSales = onSnapshot(salesQuery, (snapshot) => {
+            const fetchedSales: Sale[] = snapshot.docs.map((doc) => ({
+                _id: doc.id,
+                // Ensure paymentMethod defaults if missing (important for older data)
+                paymentMethod: (doc.data().paymentMethod || 'Cash') as Sale['paymentMethod'], 
+                ...doc.data() as Omit<Sale, '_id' | 'paymentMethod'>,
+            })).filter(sale => sale.paidAmount > 0); // Only process paid sales
+            setAllSales(fetchedSales);
+            setIsLoading(false);
+        }, (error) => {
+            console.error("Error listening to sales:", error);
+            setIsLoading(false);
+        });
+
+        // 2. Listen for Customers
+        // In a real app, this should only fetch necessary fields (id, name, currentBalance)
+        const customersQuery = query(collection(db, CUSTOMERS_COLLECTION), orderBy('name'));
+        const unsubscribeCustomers = onSnapshot(customersQuery, (snapshot) => {
+            const fetchedCustomers: Customer[] = snapshot.docs.map((doc) => ({
+                id: doc.id,
+                name: doc.data().name || 'N/A',
+                currentBalance: doc.data().currentBalance || 0 // Assuming this field tracks total debt
+            }));
+            setAllCustomers(fetchedCustomers);
+        }, (error) => {
+            console.error("Error listening to customers:", error);
+        });
+
+        return () => {
+            unsubscribeSales();
+            unsubscribeCustomers();
         };
-        localStorage.setItem("currentUser", JSON.stringify(mockUser));
-        setCurrentUser(mockUser);
     }, []);
 
-    useEffect(() => {
-        const user = localStorage.getItem("currentUser");
-        if (!user) {
-            setRole("admin");
-        } else {
-            setCurrentUser(JSON.parse(user));
-        }
-    }, [setRole]);
+    /** Data Processing: Payments Table Data & Summary */
+    const { 
+        paymentsData, 
+        summary, 
+        totalRevenue 
+    } = useMemo(() => {
+        const customerMap = new Map(allCustomers.map(c => [c.id, c]));
+        
+        const payments: CustomerPayment[] = [];
+        let cashTotal = 0;
+        let posTotal = 0;
+        let transferTotal = 0;
+        let checkTotal = 0;
 
-    // Role Toggler Handler
-    const handleToggleRole = () => {
-        const newRole = currentUser?.role === "admin" ? "staff" : "admin";
-        setRole(newRole);
-    };
-
-    // ------------------- DATA FETCHING & MOCKING -------------------
-
-    const fetchPaymentMethods = useCallback(async (range: DateRange) => {
-        setLoading(true);
-        try {
-            await new Promise(resolve => setTimeout(resolve, 500)); 
-
-            let mockData;
-
-            if (range === 'day') {
-                mockData = {
-                    summary: { cashTotal: 50000, transferTotal: 80000, posTotal: 30000, checkTotal: 5000 },
-                    chartData: [
-                        { date: "09:00", cash: 10000, transfer: 5000, pos: 2000, check: 0 },
-                        { date: "12:00", cash: 20000, transfer: 30000, pos: 15000, check: 1000 },
-                        { date: "15:00", cash: 15000, transfer: 40000, pos: 10000, check: 4000 },
-                        { date: "18:00", cash: 5000, transfer: 5000, pos: 3000, check: 0 },
-                    ],
-                };
-            } else if (range === 'week') {
-                 mockData = {
-                    summary: { cashTotal: 350000, transferTotal: 600000, posTotal: 250000, checkTotal: 40000 },
-                    chartData: [
-                        { date: "Nov 11", cash: 50000, transfer: 80000, pos: 30000, check: 5000 },
-                        { date: "Nov 12", cash: 70000, transfer: 100000, pos: 40000, check: 10000 },
-                        { date: "Nov 13", cash: 100000, transfer: 120000, pos: 50000, check: 15000 },
-                        { date: "Nov 14", cash: 130000, transfer: 150000, pos: 80000, check: 10000 },
-                        { date: "Nov 15", cash: 0, transfer: 150000, pos: 50000, check: 0 },
-                    ],
-                };
-            } else { // 'all' time
-                 mockData = {
-                    summary: { cashTotal: 550000, transferTotal: 850000, posTotal: 400000, checkTotal: 90000 },
-                    chartData: [
-                        { date: "Oct", cash: 200000, transfer: 400000, pos: 150000, check: 40000 },
-                        { date: "Nov", cash: 350000, transfer: 450000, pos: 250000, check: 50000 },
-                    ],
-                };
+        allSales.forEach(sale => {
+            // Find the current balance for this customer
+            const customer = customerMap.get(sale.customer_id);
+            const customerBalance = customer?.currentBalance ?? 0;
+            
+            // Track totals
+            switch (sale.paymentMethod) {
+                case 'Cash': cashTotal += sale.paidAmount; break;
+                case 'POS': posTotal += sale.paidAmount; break;
+                case 'Transfer': transferTotal += sale.paidAmount; break;
+                case 'Check': checkTotal += sale.paidAmount; break;
             }
-           
-            setPaymentSummary(mockData.summary);
-            setPaymentData(mockData.chartData);
 
-        } catch (err) {
-            console.error("Error fetching payment methods:", err);
-        } finally {
-            setLoading(false);
+            // Create the payment record for the table
+            payments.push({
+                id: sale._id,
+                customerName: customer?.name || `Unknown Customer (${sale.customer_id.slice(0, 5)}...)`,
+                customer_id: sale.customer_id,
+                date: sale.saleDate,
+                method: sale.paymentMethod,
+                amount: sale.paidAmount,
+                balance: customerBalance, 
+            });
+        });
+
+        const totalRevenue = cashTotal + posTotal + transferTotal + checkTotal;
+
+        const summaryData: SummaryData[] = [
+            { method: 'Cash', icon: <DollarSign size={20} />, totalAmount: cashTotal, color: PaymentMethodColors.Cash },
+            { method: 'POS', icon: <CreditCard size={20} />, totalAmount: posTotal, color: PaymentMethodColors.POS },
+            { method: 'Transfer', icon: <Send size={20} />, totalAmount: transferTotal, color: PaymentMethodColors.Transfer },
+            { method: 'Check', icon: <Landmark size={20} />, totalAmount: checkTotal, color: PaymentMethodColors.Check },
+        ];
+
+        return { paymentsData: payments, summary: summaryData, totalRevenue };
+
+    }, [allSales, allCustomers]);
+
+
+    /** Filtering, Sorting, and Pagination */
+    const filteredPayments = useMemo(() => {
+        let data = [...paymentsData];
+        const s = searchTerm.trim().toLowerCase();
+
+        // 1. Filtering
+        if (s) {
+            data = data.filter(p => 
+                p.customerName.toLowerCase().includes(s) ||
+                p.id.toLowerCase().includes(s)
+            );
         }
-    }, []);
+        if (filterMethod !== "All") {
+            data = data.filter(p => p.method === filterMethod);
+        }
 
-    useEffect(() => {
-        fetchPaymentMethods(dateRange);
-    }, [dateRange, fetchPaymentMethods]);
+        // 2. Sorting
+        if (sortField) {
+            data.sort((a, b) => {
+                const valA = a[sortField] ?? "";
+                const valB = b[sortField] ?? "";
+                if (sortField === 'date') {
+                    // Treat dates/strings specially for consistent sorting
+                    return sortOrder === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
+                }
+                if (typeof valA === "number" && typeof valB === "number") return sortOrder === "asc" ?
+                    valA - valB : valB - valA;
+                return sortOrder === "asc" ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
+            });
+        }
+        return data;
+    }, [paymentsData, searchTerm, filterMethod, sortField, sortOrder]);
 
-    // ------------------- CALCULATED VALUES & HANDLERS -------------------
 
-    const totalRevenue = paymentSummary.cashTotal + paymentSummary.transferTotal + paymentSummary.posTotal + paymentSummary.checkTotal;
+    const totalPages = Math.max(1, Math.ceil(filteredPayments.length / itemsPerPage));
+    const paginatedPayments = filteredPayments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    /** Handlers */
+    const handleSort = (field: keyof CustomerPayment) => {
+        if (sortField === field) setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+        else {
+            setSortField(field);
+            setSortOrder("asc");
+        }
+    };
     
-    // Pie chart data
-    const pieData: PieDataItem[] =
-        totalRevenue > 0
-            ? [
-                  { name: "Cash", value: paymentSummary.cashTotal },
-                  { name: "Transfer", value: paymentSummary.transferTotal },
-                  { name: "POS", value: paymentSummary.posTotal },
-                  { name: "Check", value: paymentSummary.checkTotal },
-              ]
-            : [{ name: "No Data", value: 1 }];
-
-    const COLORS = [SuccessColor, PrimaryColor, PosColor, CheckColor]; 
-
-    const handleExportData = () => {
-        const modalMessageElement = document.getElementById('permission-modal-message');
-        const modalElement = document.getElementById('permission-modal');
-
-        if (!modalMessageElement || !modalElement) {
-            console.error("Modal elements not found in the DOM.");
-            return; 
-        }
-
-        if (!isAdmin) {
-            modalMessageElement.innerText = "Permission denied. Only Admins can export data.";
-            modalElement.style.display = 'flex';
+    const handleExport = () => {
+        if (isStaff) {
+            alert("Permission Denied: Staff roles cannot export payment data.");
             return;
         }
-        console.log("Exporting Payment Methods Data...");
-        modalMessageElement.innerText = "Export initiated! (Mock feature)";
-        modalElement.style.display = 'flex';
-    };
-    
-    // Custom Tooltip for BarChart - Hides raw values for Staff
-    const CustomBarTooltip = ({ active, payload, label }: any) => {
-        if (active && payload && payload.length) {
-            return (
-                <div style={{ padding: 12, backgroundColor: CardBg, border: '1px solid ' + OutlineBorderColor, borderRadius: 8, boxShadow: '0 2px 4px rgba(0,0,0,0.1)', fontSize: 14 }}>
-                    <p style={{ fontWeight: 700, color: TextColor, marginBottom: 4 }}>{label}</p>
-                    {payload.map((entry: any, index: number) => {
-                        const name = entry.name;
-                        const value = entry.value;
-                        const color = entry.color;
-                        
-                        let displayValue;
-                        if (isAdmin) {
-                            displayValue = `₦${value.toLocaleString()}`;
-                        } else if (isStaff) {
-                             displayValue = "Hidden (Staff View)";
-                        }
-                        
-                        return (
-                            <p key={`item-${index}`} style={{ color: color, marginTop: 2 }}>
-                                {`${name}: ${displayValue}`}
-                            </p>
-                        );
-                    })}
-                </div>
-            );
-        }
-        return null;
+        // Admin export logic here
+        alert(`Admin Exporting ${filteredPayments.length} records... (CSV/PDF logic needs to be implemented)`);
     };
 
 
-    // Custom Tooltip for PieChart - Hides raw values for Staff
-    const CustomPieTooltip = ({ active, payload }: any) => {
-        if (active && payload && payload.length) {
-            const data = payload.payload;
-            
-            let displayValue;
-            if (isAdmin) {
-                displayValue = `₦${data.value.toLocaleString()}`;
-            } else if (isStaff) {
-                displayValue = "Hidden (Staff View)";
-            }
-
-            return (
-                <div style={{ padding: 12, backgroundColor: CardBg, border: '1px solid ' + OutlineBorderColor, borderRadius: 8, boxShadow: '0 2px 4px rgba(0,0,0,0.1)', fontSize: 14 }}>
-                    <p style={{ fontWeight: 700, color: TextColor }}>{data.name}</p>
-                    <p>{displayValue}</p>
-                </div>
-            );
-        }
-        return null;
-    };
-
-
-    if (loading) {
-        return <div style={{ padding: 32, textAlign: 'center', fontSize: 18 }}>Loading payment methods data...</div>;
-    }
-
+    /** -------------- Render -------------- */
     return (
-        <div style={{ padding: 32, backgroundColor: BackgroundColor, minHeight: '100vh', fontFamily: 'sans-serif' }}>
-            <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-                    <h1 style={{ fontSize: 36, fontWeight: 800, color: TextColor, margin: 0 }}>Payment Methods Dashboard</h1>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                         <Button onClick={() => router.back()} variant="outline" style={{ display: 'flex', alignItems: 'center' }}>
-                            ← Back
-                        </Button>
-                        <Button onClick={handleToggleRole} variant="outline" style={{ display: 'flex', alignItems: 'center', gap: 8 }} title="Toggle User Role">
-                            <User style={{ height: 16, width: 16 }} />
-                            <span>Switch Role ({isAdmin ? "Admin" : "Staff"})</span>
-                        </Button>
-                        <Button onClick={handleExportData} style={{ display: 'flex', alignItems: 'center', gap: 8 }} title={isAdmin ? "Export Data" : "Permission Denied"}>
-                            <Download style={{ height: 16, width: 16 }} />
-                            <span>Export Data</span>
+        <Card>
+            <CardHeader style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <CardTitle>Customer Payment Dashboard ({currentUserRole})</CardTitle>
+                <div style={{ fontSize: 13, color: "#666" }}>Real-time updates via **Firestore `onSnapshot`**</div>
+            </CardHeader>
+            <CardContent>
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                    
+                    {/* Payment Summary Cards */}
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", justifyContent: 'space-between' }}>
+                        {summary.map(item => (
+                            <PaymentCard key={item.method} data={item} hideAmount={isStaff} />
+                        ))}
+                        {/* Total Revenue Card */}
+                        <div style={{ flex: 1, minWidth: '200px', padding: '16px', borderRadius: '12px', background: '#4f46e5', color: '#fff', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ fontSize: '14px', fontWeight: 600 }}>TOTAL REVENUE</div>
+                                <DollarSign size={20} />
+                            </div>
+                            <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '8px' }}>
+                                {isStaff ? '***' : formatCurrency(totalRevenue)}
+                            </div>
+                            <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>All Payment Methods</div>
+                        </div>
+                    </div>
+                    
+                    {/* Charts Section */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24, marginTop: 12 }}>
+                        <div style={{ height: 300 }}>
+                            <MockChart title="Payments by Method (Bar Chart)" height={300} />
+                        </div>
+                        <div style={{ height: 300 }}>
+                            <MockChart title="Payments Distribution (Pie Chart)" height={300} />
+                        </div>
+                    </div>
+
+                    {/* Customer Payments Table */}
+                    <h3 style={{ margin: '20px 0 10px 0', fontSize: 18, fontWeight: 700, borderBottom: '1px solid #eee', paddingBottom: 5 }}>Customer Payments History</h3>
+                    
+                    {/* Filters and Export */}
+                    <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                        <div style={{ minWidth: 260, maxWidth: 400, width: "100%" }}>
+                            <Input 
+                                value={searchTerm} 
+                                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
+                                placeholder="Search customer or invoice ID..." 
+                                style={{ flexGrow: 1 }}
+                            />
+                        </div>
+                        <select 
+                            value={filterMethod} 
+                            onChange={(e) => { setFilterMethod(e.target.value); setCurrentPage(1); }}
+                            style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc", height: 36 }}
+                        >
+                            <option value="All">All Payment Methods</option>
+                            {Object.keys(PaymentMethodColors).map(method => (
+                                <option key={method} value={method}>{method}</option>
+                            ))}
+                        </select>
+                        
+                        {/* Role-Based Export Button */}
+                        <Button 
+                            onClick={handleExport} 
+                            disabled={isStaff} 
+                            style={{ marginLeft: "auto", background: isStaff ? "#bdbdbd" : "#059669" }}
+                        >
+                            <Download size={16} style={{ marginRight: 5 }} /> Export 
                         </Button>
                     </div>
-                </header>
 
-                {/* Role/Permission Modal */}
-                <div id="permission-modal" style={{ display: 'none', position: 'fixed', inset: 0, backgroundColor: 'rgba(55, 65, 81, 0.5)', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-                    <Card style={{ padding: 24, maxWidth: 384 }}>
-                        <p id="permission-modal-message" style={{ color: TextColor, marginBottom: 16 }}>Message</p>
-                        <Button onClick={() => {
-                            const modal = document.getElementById('permission-modal');
-                            if (modal) modal.style.display = 'none';
-                        }}>Close</Button>
-                    </Card>
+                    {/* Table */}
+                    <div style={{ border: "1px solid #d1d5db", borderRadius: 12, overflowX: "auto" }}>
+                        <Table style={{ minWidth: 1000 }}>
+                            <thead>
+                                <TableRow>
+                                    <TableHeadCell>#</TableHeadCell>
+                                    <TableHeadCell onClick={() => handleSort("customerName")}>Customer Name</TableHeadCell>
+                                    <TableHeadCell onClick={() => handleSort("date")}>Date of Sale</TableHeadCell>
+                                    <TableHeadCell onClick={() => handleSort("id")}>Invoice / Sale ID</TableHeadCell>
+                                    <TableHeadCell onClick={() => handleSort("method")}>Payment Method</TableHeadCell>
+                                    <TableHeadCell onClick={() => handleSort("amount")}>Amount Paid</TableHeadCell>
+                                    <TableHeadCell onClick={() => handleSort("balance")}>Balance (Debt)</TableHeadCell>
+                                </TableRow>
+                            </thead>
+                            <tbody>
+                                {isLoading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={7} style={{ textAlign: "center", padding: 20 }}>Loading payment data...</TableCell>
+                                    </TableRow>
+                                ) : paginatedPayments.length ? (
+                                    paginatedPayments.map((payment, idx) => {
+                                        const customerDebt = allCustomers.find(c => c.id === payment.customer_id)?.currentBalance ?? 0;
+                                        return (
+                                            <TableRow key={payment.id}>
+                                                <TableCell>{(currentPage - 1) * itemsPerPage + idx + 1}</TableCell>
+                                                <TableCell>
+                                                    {/* Optional: Link to customer details page */}
+                                                    <a href={`/customers/${payment.customer_id}`} style={{ color: PaymentMethodColors.Transfer, textDecoration: 'none' }}>
+                                                        {payment.customerName}
+                                                    </a>
+                                                </TableCell>
+                                                <TableCell>{formatShortDate(payment.date)}</TableCell>
+                                                <TableCell>{payment.id}</TableCell>
+                                                <TableCell>
+                                                    <span style={{ 
+                                                        color: '#fff', 
+                                                        background: PaymentMethodColors[payment.method],
+                                                        padding: '3px 8px',
+                                                        borderRadius: 4,
+                                                        fontSize: 12,
+                                                        fontWeight: 600
+                                                    }}>{payment.method}</span>
+                                                </TableCell>
+                                                {/* Role-Based Access: Staff hides raw amounts */}
+                                                <TableCell style={{ fontWeight: 600 }}>
+                                                    {isStaff ? '***' : formatCurrency(payment.amount)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <span style={{ 
+                                                        color: customerDebt > 0 ? '#dc2626' : '#10b981', 
+                                                        fontWeight: 600 
+                                                    }}>
+                                                        {formatCurrency(customerDebt)}
+                                                    </span>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={7} style={{ textAlign: "center", padding: 20 }}>No payments found matching criteria.</TableCell>
+                                    </TableRow>
+                                )}
+                            </tbody>
+                        </Table>
+                    </div>
+
+                    {/* Pagination */}
+                    <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12 }}>
+                        <Button disabled={currentPage === 1} onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}>Prev</Button>
+                        <span style={{ alignSelf: "center" }}>{currentPage} / {totalPages}</span>
+                        <Button disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}>Next</Button>
+                    </div>
+
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 24, marginBottom: 32 }}>
-                    {/* Total Revenue Card */}
-                    <Card style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                        <CardHeader style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '0px 0px 8px 0px', borderBottom: 'none' }}>
-                            <CardTitle style={{ fontSize: 14, fontWeight: 500 }}>Total Revenue</CardTitle>
-                            <DollarSign style={{ height: 16, width: 16, color: MutedTextColor }} />
-                        </CardHeader>
-                        <CardContent style={{ padding: 0 }}>
-                            <div style={{ fontSize: 30, fontWeight: 700, color: TextColor }}>
-                                {isAdmin ? `₦${totalRevenue.toLocaleString()}` : "Hidden"}
-                            </div>
-                            <p style={{ fontSize: 12, color: MutedTextColor, marginTop: 4 }}>Overview ({dateRange})</p>
-                        </CardContent>
-                    </Card>
-
-                    {/* Cash Total Card */}
-                    <Card style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                        <CardHeader style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '0px 0px 8px 0px', borderBottom: 'none' }}>
-                            <CardTitle style={{ fontSize: 14, fontWeight: 500 }}>Cash Payments</CardTitle>
-                            <Landmark style={{ height: 16, width: 16, color: SuccessColor }} />
-                        </CardHeader>
-                        <CardContent style={{ padding: 0 }}>
-                            <div style={{ fontSize: 30, fontWeight: 700, color: TextColor }}>
-                                {isAdmin ? `₦${paymentSummary.cashTotal.toLocaleString()}` : "Hidden"}
-                            </div>
-                            <p style={{ fontSize: 12, color: MutedTextColor, marginTop: 4 }}>Total Cash ({dateRange})</p>
-                        </CardContent>
-                    </Card>
-
-                    {/* Transfer Total Card */}
-                    <Card style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                        <CardHeader style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '0px 0px 8px 0px', borderBottom: 'none' }}>
-                            <CardTitle style={{ fontSize: 14, fontWeight: 500 }}>Bank Transfers</CardTitle>
-                            <Send style={{ height: 16, width: 16, color: PrimaryColor }} />
-                        </CardHeader>
-                        <CardContent style={{ padding: 0 }}>
-                            <div style={{ fontSize: 30, fontWeight: 700, color: TextColor }}>
-                                {isAdmin ? `₦${paymentSummary.transferTotal.toLocaleString()}` : "Hidden"}
-                            </div>
-                            <p style={{ fontSize: 12, color: MutedTextColor, marginTop: 4 }}>Total Transfers ({dateRange})</p>
-                        </CardContent>
-                    </Card>
-
-                    {/* POS Total Card */}
-                    <Card style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                        <CardHeader style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '0px 0px 8px 0px', borderBottom: 'none' }}>
-                            <CardTitle style={{ fontSize: 14, fontWeight: 500 }}>POS Payments</CardTitle>
-                            <CreditCard style={{ height: 16, width: 16, color: PosColor }} />
-                        </CardHeader>
-                        <CardContent style={{ padding: 0 }}>
-                            <div style={{ fontSize: 30, fontWeight: 700, color: TextColor }}>
-                                {isAdmin ? `₦${paymentSummary.posTotal.toLocaleString()}` : "Hidden"}
-                            </div>
-                            <p style={{ fontSize: 12, color: MutedTextColor, marginTop: 4 }}>Total POS ({dateRange})</p>
-                        </CardContent>
-                    </Card>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
-                    {/* Daily Revenue Chart Card (Bar Chart) */}
-                    <Card style={{ gridColumn: 'span 2' }}>
-                        <CardHeader style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <CardTitle style={{ fontSize: 18 }}>Payment Methods Overview</CardTitle>
-                            {/* Date Range Selector */}
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                {(['day', 'week', 'all'] as DateRange[]).map((range) => (
-                                    <Button 
-                                        key={range} 
-                                        onClick={() => setDateRange(range)} 
-                                        variant={dateRange === range ? 'active' : 'outline'}
-                                        style={{ textTransform: 'capitalize' }}
-                                    >
-                                        {range === 'day' ? 'Today' : range === 'week' ? 'This Week' : 'All Time'}
-                                    </Button>
-                                ))}
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <ResponsiveContainer width="100%" height={400}>
-                                <BarChart data={paymentData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                    <XAxis dataKey="date" />
-                                    <YAxis 
-                                        tickFormatter={(value) => isAdmin ? `₦${value.toLocaleString()}` : '...'} 
-                                    />
-                                    <Tooltip content={<CustomBarTooltip />} />
-                                    <Legend />
-                                    <Bar dataKey="cash" fill={SuccessColor} />
-                                    <Bar dataKey="transfer" fill={PrimaryColor} />
-                                    <Bar dataKey="pos" fill={PosColor} />
-                                    <Bar dataKey="check" fill={CheckColor} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </CardContent>
-                    </Card>
-
-                    {/* Payment Method Distribution Card (Pie Chart) */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle style={{ fontSize: 18 }}>Total Method Distribution</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div style={{ height: 400 }}>
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={pieData}
-                                            cx="50%"
-                                            cy="50%"
-                                            labelLine={false}
-                                            label={({ name, percent }) => 
-                                                isAdmin && percent !== undefined ? 
-                                                `${name}: ${(percent * 100).toFixed(0)}%` : 
-                                                name
-                                            }
-                                            outerRadius={120}
-                                            fill="#8884d8"
-                                            dataKey="value"
-                                        >
-                                            {pieData.map((_, index) => (
-                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip content={<CustomPieTooltip />} />
-                                        <Legend />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-            </div>
-        </div>
+            </CardContent>
+        </Card>
     );
 }

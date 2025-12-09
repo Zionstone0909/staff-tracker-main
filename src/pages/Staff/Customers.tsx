@@ -1,471 +1,418 @@
-"use client"
+// src/pages/Staff/Customers.tsx
 
-import { useState, useEffect, CSSProperties, PropsWithChildren } from "react"
-// FIX: Removed the unused import of 'useNavigate' to resolve TS6133 warning.
-// import { useNavigate } from "react-router-dom" // <-- This line is removed.
+"use client";
 
-// --- Utility: UUID Generator ---
-/**
- * Generates a mock UUID. In a real app, this would come from a backend or a library like 'uuid'.
- */
-const generateUUID = (): string => {
-    // Simple mock UUID generator
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-};
+import React, { useState, useEffect, CSSProperties, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { Users, Plus, Search, Mail, Phone, ShoppingCart, Clock } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
 
-// --- Constant Styles ---
-const PrimaryColor = '#4f46e5';
-const DangerColor = '#ef4444';
-const CardBg = '#ffffff';
-const BgColor = '#f3f4f6';
+// ====================================================================
+// EXPORTED TYPES TO SUPPORT CustomerForm.tsx
+// ====================================================================
 
-/**
- * Helper to apply responsive CSS styles (Tailwind-like grid logic).
- */
-const getResponsiveFormStyle = (isDesktop: boolean) => {
-    if (isDesktop) {
-        return { gridTemplateColumns: 'repeat(2, 1fr)' } as CSSProperties;
-    }
-    return { gridTemplateColumns: 'repeat(1, 1fr)' } as CSSProperties;
-};
-
-// --- Custom Component Definitions ---
-
-type ButtonProps = PropsWithChildren<{ 
-    onClick?: () => void, 
-    style?: CSSProperties, 
-    variant?: 'default' | 'ghost' | 'destructive' | 'info',
-    disabled?: boolean 
-}> & React.ButtonHTMLAttributes<HTMLButtonElement>;
-
-
-const Button: React.FC<ButtonProps> = ({ 
-    children, 
-    onClick, 
-    style, 
-    variant = 'default', 
-    disabled = false, 
-    ...rest
-}) => {
-    let baseStyle: CSSProperties = {
-        padding: '0.5rem 1rem',
-        borderRadius: '0.375rem',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        fontWeight: '600',
-        transition: 'background-color 0.2s, opacity 0.2s',
-        border: 'none',
-        fontSize: '0.875rem',
-        opacity: disabled ? 0.6 : 1,
-        boxSizing: 'border-box',
-        whiteSpace: 'nowrap',
-    };
-
-    if (variant === 'destructive') {
-        baseStyle = { ...baseStyle, backgroundColor: DangerColor, color: '#fff' };
-    } else if (variant === 'ghost') {
-        baseStyle = { ...baseStyle, backgroundColor: 'transparent', color: PrimaryColor, border: '1px solid transparent' };
-    } else if (variant === 'info') {
-        baseStyle = { ...baseStyle, backgroundColor: '#3b82f6', color: '#fff', border: '1px solid #3b82f6' };
-    } 
-    else { // default
-        baseStyle = { ...baseStyle, backgroundColor: PrimaryColor, color: '#fff' };
-    }
-
-    const handleClick = onClick || (() => {}); 
-
-    return (
-        <button 
-            onClick={handleClick} 
-            style={{ ...baseStyle, ...style }} 
-            disabled={disabled} 
-            {...rest}
-        >
-            {children}
-        </button>
-    );
-};
-
-const Card: React.FC<PropsWithChildren<{ style?: CSSProperties }>> = ({ children, style }) => (
-    <div style={{ backgroundColor: CardBg, borderRadius: 8, boxShadow: '0 1px 10px rgba(0,0,0,0.08)', ...style }}>
-        {children}
-    </div>
-);
-const CardHeader: React.FC<PropsWithChildren<{ style?: CSSProperties }>> = ({ children, style }) => (
-    <div style={{ padding: '1rem 1.5rem 0.5rem', borderBottom: '1px solid #e5e7eb', ...style }}>
-        {children}
-    </div>
-);
-const CardTitle: React.FC<PropsWithChildren<{ style?: CSSProperties }>> = ({ children, style }) => (
-    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0, ...style }}>
-        {children}
-    </h2>
-);
-const CardContent: React.FC<PropsWithChildren<{ style?: CSSProperties }>> = ({ children, style }) => (
-    <div style={{ padding: '1.5rem', ...style }}>
-        {children}
-    </div>
-);
-
-const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { label: string }> = ({ label, ...props }) => (
-    <div style={{ marginBottom: '1rem' }}>
-        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem', color: '#374151' }}>{label}</label>
-        <input
-            {...props}
-            style={{
-                width: '100%',
-                padding: '0.6rem 0.75rem',
-                border: '1px solid #d1d5db',
-                borderRadius: '0.375rem',
-                boxSizing: 'border-box',
-                outline: 'none',
-                transition: 'border-color 0.2s',
-                ...(props.style || {}),
-            }}
-        />
-    </div>
-);
-
-// --- Type Definitions (ID changed to string) ---
-
-export interface Customer {
-    id: string; // Used for unique ID (UUID)
-    name: string;
-    phone: string;
-    email: string;
-    address: string;
-    account_status: 'Active' | 'Inactive' | 'Pending'; 
+// Define the expected structure for the user object from useAuth
+export interface StaffUser {
+  id: string; // The unique ID used to filter data (e.g., 'staff-001')
+  email: string;
+  role: string;
 }
 
+interface AuthContextType {
+    user: StaffUser | null;
+    logout: () => void;
+    initialized: boolean;
+}
+
+export interface Payment {
+    date: number; // Unix timestamp
+    amount: number;
+}
+
+/**
+ * CustomerRecord represents the full schema used for creation/editing 
+ * (used by CustomerForm).
+ */
+export interface CustomerRecord {
+    id: string;
+    // Core data (matches what the form collects)
+    name: string;
+    email: string;
+    phone: string;
+    notes: string;
+    
+    // Financial/System data
+    totalDue: number; 
+    isFullyPaid: boolean; 
+    lastPaymentDate: number | null; 
+    creationDate: number; // <--- This was the missing required field in mock data
+    createdBy: string; // Staff ID
+    createdByName: string; // Staff name
+    payments: Payment[]; 
+
+    // Additional fields for display in this page (derived from CustomerRecord)
+    totalSales: number; 
+    lastActive: string; // Date string for display
+}
+
+/**
+ * Customer type for display in the list view (simpler than CustomerRecord).
+ * NOTE: 'creationDate' is explicitly included to fix the TypeScript error.
+ */
+type Customer = Omit<CustomerRecord, 'totalDue' | 'isFullyPaid' | 'payments' | 'createdBy' | 'createdByName' | 'lastPaymentDate'> & {
+    totalSales: number; 
+    lastActive: string; // Date string for display
+    staffId: string; // Key for assignment/filtering
+};
+
+// ========== STYLING CONSTANTS ==========
+const PrimaryColor = "#4f46e5";
+const SecondaryColor = "#4338ca";
+const TextColor = "#111827";
+const MutedColor = "#6b7280";
+const LightBg = "#f3f4f6";
+const CardBg = "#fff";
+
+// ========== UTILITY FUNCTIONS / HOOKS ==========
+const formatCurrency = (value: number) => `₦${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+
+const useWindowWidth = () => {
+  const [width, setWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1400);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  return width;
+};
+
+// ========== UI COMPONENTS (Hover Logic Corrected) ==========
+
+interface CardProps {
+  style?: CSSProperties;
+  children: React.ReactNode;
+  onClick?: () => void;
+}
+
+const Card: React.FC<CardProps> = ({ children, style, onClick }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  
+  const baseStyle: CSSProperties = {
+    backgroundColor: CardBg,
+    borderRadius: 8,
+    boxShadow: "0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)",
+    transition: 'box-shadow 0.2s, transform 0.2s',
+    cursor: onClick ? 'pointer' : 'default',
+    ...style,
+  };
+  
+  // Conditional style for hover state
+  const hoverStyle: CSSProperties = isHovered && onClick 
+    ? { boxShadow: '0 4px 10px rgba(0,0,0,0.15)', transform: 'translateY(-2px)' }
+    : {};
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{ ...baseStyle, ...hoverStyle }}
+    >
+      {children}
+    </div>
+  );
+};
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary';
+  onClick: () => void;
+}
+
+const Button: React.FC<ButtonProps> = ({ children, onClick, style, variant = 'primary', ...props }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  const baseStyle: CSSProperties = {
+    padding: "0.5rem 1rem",
+    color: "#fff",
+    border: "none",
+    borderRadius: "0.375rem",
+    cursor: "pointer",
+    fontWeight: 600,
+    transition: "background-color 0.2s",
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+  };
+
+  // Determine button color based on hover state
+  const color = isHovered 
+    ? (variant === 'primary' ? SecondaryColor : PrimaryColor) // Swap colors on hover
+    : (variant === 'primary' ? PrimaryColor : SecondaryColor);
+
+  const colorStyle: CSSProperties = { backgroundColor: color };
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{ ...baseStyle, ...colorStyle, ...style }}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+
+
+// ========== MOCK CUSTOMER DATA (Corrected to include creationDate) ==========
+const ONE_YEAR_AGO = (Date.now() / 1000) - (365 * 24 * 60 * 60);
+
 const mockCustomers: Customer[] = [
-    { id: '1a2b3c4d-5e6f-7080-9101-112131415161', name: "Alice Johnson", phone: "555-0101", email: "alice@example.com", address: "45 River Rd", account_status: 'Active' },
-    { id: '2b3c4d5e-6f70-8091-0112-131415161718', name: "Bob Smith", phone: "555-0202", email: "bob@example.com", address: "22 Lake Ave", account_status: 'Active' },
-    { id: '3c4d5e6f-7080-9101-1121-314151617181', name: "Charlie Brown", phone: "555-0303", email: "charlie@example.com", address: "10 Main St", account_status: 'Pending' },
+  // Staff 1 Customers (staff-001) - 3 Customers
+  { id: 'C1001', staffId: 'staff-001', name: 'Alice Johnson', email: 'alice.j@mail.com', phone: '08011111111', totalSales: 55000, lastActive: '2025-12-08', notes: 'Loyal customer', creationDate: ONE_YEAR_AGO + 10000000 },
+  { id: 'C1002', staffId: 'staff-001', name: 'Ben Carson', email: 'ben.c@mail.com', phone: '08022222222', totalSales: 12000, lastActive: '2025-12-05', notes: 'First-time buyer', creationDate: ONE_YEAR_AGO + 20000000 },
+  { id: 'C1003', staffId: 'staff-001', name: 'Chris Evans', email: 'chris.e@mail.com', phone: '08033333333', totalSales: 80000, lastActive: '2025-11-30', notes: 'Bulk purchaser', creationDate: ONE_YEAR_AGO + 30000000 },
+  
+  // Staff 2 Customers (staff-002) - 2 Customers
+  { id: 'C2001', staffId: 'staff-002', name: 'David Smith', email: 'david.s@mail.com', phone: '08044444444', totalSales: 45000, lastActive: '2025-12-07', notes: 'Regular visits', creationDate: ONE_YEAR_AGO + 40000000 },
+  { id: 'C2002', staffId: 'staff-002', name: 'Emily White', email: 'emily.w@mail.com', phone: '08055555555', totalSales: 92000, lastActive: '2025-12-08', notes: 'New high-value client', creationDate: ONE_YEAR_AGO + 50000000 },
+  
+  // Staff 3 Customers (staff-003) - 1 Customer
+  { id: 'C3001', staffId: 'staff-003', name: 'Frank Green', email: 'frank.g@mail.com', phone: '08066666666', totalSales: 150000, lastActive: '2025-12-01', notes: 'Wholesale account', creationDate: ONE_YEAR_AGO + 60000000 },
+  
+  // Staff 4 Customers (staff-004) - 4 Customers
+  { id: 'C4001', staffId: 'staff-004', name: 'Grace Hall', email: 'grace.h@mail.com', phone: '08077777777', totalSales: 21000, lastActive: '2025-12-08', notes: 'Needs follow-up', creationDate: ONE_YEAR_AGO + 70000000 },
+  { id: 'C4002', staffId: 'staff-004', name: 'Henry King', email: 'henry.k@mail.com', phone: '08088888888', totalSales: 34000, lastActive: '2025-12-06', notes: 'Standard client', creationDate: ONE_YEAR_AGO + 80000000 },
+  { id: 'C4003', staffId: 'staff-004', name: 'Ivy Stone', email: 'ivy.s@mail.com', phone: '08099999999', totalSales: 10000, lastActive: '2025-12-04', notes: 'Small purchases', creationDate: ONE_YEAR_AGO + 90000000 },
+  { id: 'C4004', staffId: 'staff-004', name: 'Jack Brown', email: 'jack.b@mail.com', phone: '08010101010', totalSales: 60000, lastActive: '2025-12-07', notes: 'Referred by another staff', creationDate: ONE_YEAR_AGO + 100000000 },
+  
+  // Staff 5 Customers (staff-005) - 2 Customers
+  { id: 'C5001', staffId: 'staff-005', name: 'Kelly Lin', email: 'kelly.l@mail.com', phone: '08011121314', totalSales: 77000, lastActive: '2025-12-08', notes: 'VIP account', creationDate: ONE_YEAR_AGO + 110000000 },
+  { id: 'C5002', staffId: 'staff-005', name: 'Liam Miller', email: 'liam.m@mail.com', phone: '08015161718', totalSales: 18000, lastActive: '2025-12-03', notes: 'Seasonal', creationDate: ONE_YEAR_AGO + 120000000 },
+  
+  // The remaining 5 staff members (006-010) are represented with customers as well.
+  { id: 'C6001', staffId: 'staff-006', name: 'Mia Ross', email: 'mia.r@mail.com', phone: '08019202122', totalSales: 42000, lastActive: '2025-12-07', notes: '', creationDate: ONE_YEAR_AGO + 130000000 },
+  { id: 'C7001', staffId: 'staff-007', name: 'Noah Perez', email: 'noah.p@mail.com', phone: '08023242526', totalSales: 85000, lastActive: '2025-12-05', notes: '', creationDate: ONE_YEAR_AGO + 140000000 },
+  { id: 'C8001', staffId: 'staff-008', name: 'Olivia Scott', email: 'olivia.s@mail.com', phone: '08027282930', totalSales: 30000, lastActive: '2025-12-08', notes: '', creationDate: ONE_YEAR_AGO + 150000000 },
+  { id: 'C9001', staffId: 'staff-009', name: 'Peter Tan', email: 'peter.t@mail.com', phone: '08031323334', totalSales: 10000, lastActive: '2025-12-06', notes: '', creationDate: ONE_YEAR_AGO + 160000000 },
+  { id: 'C1000', staffId: 'staff-010', name: 'Quinn Vega', email: 'quinn.v@mail.com', phone: '08035363738', totalSales: 50000, lastActive: '2025-12-08', notes: '', creationDate: ONE_YEAR_AGO + 170000000 },
 ];
 
-// --- Customer Details Modal Component ---
 
-const CustomerDetailsModal: React.FC<{ customer: Customer, onClose: () => void }> = ({ customer, onClose }) => {
-    return (
-        <div style={{ 
-            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', 
-            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', 
-            alignItems: 'center', zIndex: 1000, padding: '1rem' 
-        }}>
-            <Card style={{ 
-                width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto', 
-                transform: 'translateY(0)', transition: 'transform 0.3s' 
-            }}>
-                <CardHeader style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <CardTitle>Customer Details: {customer.name}</CardTitle>
-                    <Button onClick={onClose} variant="ghost" style={{ fontSize: '1.5rem', padding: '0.25rem 0.5rem', lineHeight: 1 }}>&times;</Button>
-                </CardHeader>
-                <CardContent style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {/* Display the generated UUID */}
-                    <p><strong>Unique ID (UUID):</strong> <span style={{ fontFamily: 'monospace', wordBreak: 'break-all', color: PrimaryColor }}>{customer.id}</span></p>
-                    <p><strong>Account Status:</strong> <span style={{ fontWeight: 700, color: customer.account_status === 'Active' ? '#10b981' : customer.account_status === 'Pending' ? '#f59e0b' : DangerColor }}>{customer.account_status}</span></p>
-                    <p><strong>Name:</strong> {customer.name}</p>
-                    <p><strong>Phone:</strong> {customer.phone}</p>
-                    <p><strong>Email:</strong> {customer.email}</p>
-                    <p><strong>Address:</strong> {customer.address}</p>
-                    
-                    <div style={{ marginTop: '1rem', textAlign: 'right' }}>
-                        <Button onClick={onClose} variant="default">Close</Button>
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
-    );
-};
+// ========== MAIN COMPONENT ==========
 
-// --- Customer Form Component ---
+export default function StaffCustomersPage() {
+  const { user, initialized } = useAuth() as AuthContextType; 
+  const navigate = useNavigate();
+  const windowWidth = useWindowWidth();
 
-const CustomerForm: React.FC<{ onAddCustomer: (c: Omit<Customer, "id" | "account_status">) => Promise<void> }> = ({ onAddCustomer }) => {
-    const [formData, setFormData] = useState<Omit<Customer, "id" | "account_status">>({
-        name: '',
-        phone: '',
-        email: '',
-        address: '',
-    });
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [isDesktop, setIsDesktop] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
-    useEffect(() => {
-        const checkDesktop = () => setIsDesktop(window.innerWidth >= 768);
-        checkDesktop();
-        window.addEventListener('resize', checkDesktop);
-        return () => window.removeEventListener('resize', checkDesktop);
-    }, []);
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (isSubmitting || !formData.name.trim() || !formData.phone.trim()) return; 
-
-        setIsSubmitting(true);
-        try {
-            await onAddCustomer(formData);
-            setFormData({ name: '', phone: '', email: '', address: '' });
-        } catch (error) {
-            console.error("Submission error:", error);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    return (
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {/* Responsive grid for desktop/mobile */}
-            <div style={{ display: 'grid', gap: '1rem', ...getResponsiveFormStyle(isDesktop) }}>
-                <Input label="Customer Name (Required)" name="name" value={formData.name} onChange={handleChange} required />
-                <Input label="Phone (Required)" name="phone" type="tel" value={formData.phone} onChange={handleChange} required />
-                <Input label="Email" name="email" type="email" value={formData.email} onChange={handleChange} />
-                <Input label="Address" name="address" value={formData.address} onChange={handleChange} />
-            </div>
-
-            <div style={{ textAlign: 'right', marginTop: '0.5rem' }}>
-                <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? 'Adding...' : 'Save New Customer'}
-                </Button>
-            </div>
-        </form>
-    );
-};
-
-const CustomerTable: React.FC<{ 
-    customers: Customer[], 
-    loading: boolean, 
-    error: string | null,
-    isAdmin: boolean,
-    onView: (customer: Customer) => void,
-    onEdit: (id: string) => void,
-    onDelete: (id: string) => void
-}> = ({ customers, loading, error, isAdmin, onView, onEdit, onDelete }) => {
-    if (loading) return <div style={{ textAlign: 'center', padding: '1rem', color: PrimaryColor }}>Loading customers...</div>;
-    if (error) return <div style={{ color: DangerColor, padding: '1rem' }}>Error: {error}</div>;
-
-    return (
-        <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px', fontSize: '0.875rem' }}>
-                <thead>
-                    <tr style={{ backgroundColor: '#eef2ff', fontWeight: 600 }}>
-                        <th style={{ padding: '1rem 0.75rem', textAlign: 'left', borderBottom: '2px solid #c7d2fe' }}>Name</th>
-                        <th style={{ padding: '1rem 0.75rem', textAlign: 'left', borderBottom: '2px solid #c7d2fe' }}>Phone</th>
-                        <th style={{ padding: '1rem 0.75rem', textAlign: 'left', borderBottom: '2px solid #c7d2fe' }}>Status</th>
-                        <th style={{ padding: '1rem 0.75rem', textAlign: 'left', borderBottom: '2px solid #c7d2fe' }}>Address</th>
-                        <th style={{ padding: '1rem 0.75rem', textAlign: 'center', borderBottom: '2px solid #c7d2fe' }}>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {customers.length === 0 ? (
-                        <tr>
-                            <td colSpan={5} style={{ textAlign: 'center', padding: '1rem', color: '#6b7280' }}>No matching customers found.</td>
-                        </tr>
-                    ) : (
-                        customers.map((c, index) => (
-                            <tr key={c.id} style={{ backgroundColor: index % 2 === 0 ? CardBg : BgColor, transition: 'background-color 0.2s' }}>
-                                <td style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb', fontWeight: 500 }}>{c.name}</td>
-                                <td style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb' }}>{c.phone}</td>
-                                <td style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb', fontWeight: 600, color: c.account_status === 'Active' ? '#10b981' : c.account_status === 'Pending' ? '#f59e0b' : DangerColor }}>
-                                    {c.account_status}
-                                </td>
-                                <td style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb' }}>{c.address}</td>
-                                <td style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb', display: 'flex', gap: 8, justifyContent: 'center' }}>
-                                    <Button onClick={() => onView(c)} variant="info" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>View</Button>
-                                    {isAdmin && (
-                                        <>
-                                            <Button onClick={() => onEdit(c.id)} variant="ghost" style={{ padding: '0.25rem 0.5rem', border: '1px solid #ccc', fontSize: '0.75rem' }}>Edit</Button>
-                                            <Button onClick={() => onDelete(c.id)} variant="destructive" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>Delete</Button>
-                                        </>
-                                    )}
-                                </td>
-                            </tr>
-                        ))
-                    )}
-                </tbody>
-            </table>
-        </div>
-    );
-};
-
-// --- Main Page Component ---
-
-export default function CustomersPage() {
-    // Retaining the mock navigate function definition
-    const navigate = ((path: string | number) => { console.log(`Navigating to: ${path}`); }) as any;
-    
-    // Simulate user role based on simple state (Admin for demonstration)
-    const [role] = useState<'admin' | 'staff'>('admin'); 
-    const isAdmin = role === 'admin';
-
-    const [customers, setCustomers] = useState<Customer[]>(mockCustomers);
-    const [loading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-
-    // Filter customers based on search term
-    const filteredCustomers = customers.filter(c => 
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone.includes(searchTerm) ||
-        c.email.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-
-    useEffect(() => {
-        // Mock navigation logic
-    }, [])
-
-
-    const addCustomer = async (newCustomer: Omit<Customer, "id" | "account_status">) => {
-        setMessage(null);
-        if (!isAdmin) {
-            setError("Access Denied: Only Admins can add customers.");
-            return;
-        }
-
-        try {
-            await new Promise(resolve => setTimeout(resolve, 300));
-            
-            // *** CORE LOGIC IMPLEMENTATION ***
-            const customerWithId: Customer = { 
-                id: generateUUID(), // **Generate unique ID**
-                ...newCustomer,
-                account_status: 'Active' // Default status for a new customer
-            };
-
-            setCustomers(prev => [...prev, customerWithId]); // **Add to table/state**
-
-            setMessage({ 
-                text: `✅ Successfully added customer: ${customerWithId.name}. Unique ID (UUID): ${customerWithId.id.substring(0, 8)}...`, 
-                type: 'success' 
-            });
-            setError(null);
-        } catch (err: any) {
-            console.error("[v2] Error adding customer:", err)
-            setError("Failed to add customer")
-        }
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (initialized && (!user || user.role !== 'staff')) {
+      navigate("/login", { replace: true });
     }
+  }, [user, initialized, navigate]);
 
-    const editCustomer = (id: string) => {
-        setMessage(null);
-        if (!isAdmin) {
-            setError("Access Denied: Only Admins can edit customers.")
-            return;
-        }
-        setMessage({ text: `⚙️ Admin Action: Prepared to edit customer with UUID ${id.substring(0, 8)}... (Feature Placeholder).`, type: 'success' });
-        console.log(`Admin Action: Preparing to edit customer ID ${id}`);
-        setError(null);
-    };
+  // Data Filtering Effect (Core Logic)
+  useEffect(() => {
+    if (user?.id) {
+      // Filter customers to show only those assigned to the logged-in staff member
+      const customersForUser = mockCustomers.filter(customer => customer.staffId === user.id);
+      setCustomers(customersForUser);
+    } else {
+      setCustomers([]);
+    }
+  }, [user]);
 
-    const deleteCustomer = (id: string) => {
-        setMessage(null);
-        if (!isAdmin) {
-            setError("Access Denied: Only Admins can delete customers.")
-            return;
-        }
-        
-        setCustomers(prev => prev.filter(c => c.id !== id));
-        setMessage({ text: `🗑️ Successfully deleted customer with UUID ${id.substring(0, 8)}...`, type: 'success' });
-        console.log(`Admin Action: Deleted customer ID ${id}`);
-        setError(null);
-    };
-    
-    const handleViewDetails = (customer: Customer) => {
-        setSelectedCustomer(customer);
-    };
+  // Search/Filter Memoization
+  const filteredCustomers = useMemo(() => {
+    if (!searchTerm) return customers;
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    return customers.filter(customer =>
+      customer.name.toLowerCase().includes(lowerCaseSearchTerm) ||
+      customer.email.toLowerCase().includes(lowerCaseSearchTerm) ||
+      customer.phone.includes(lowerCaseSearchTerm)
+    );
+  }, [customers, searchTerm]);
+  
+  // Stats
+  const totalCustomerSales = useMemo(() => 
+    customers.reduce((sum, c) => sum + c.totalSales, 0), [customers]
+  );
 
-
+  // Responsive Styles
+  const isSmallScreen = windowWidth < 640;
+  const listGridStyle: CSSProperties = {
+    display: "grid",
+    gap: "1rem",
+    gridTemplateColumns: isSmallScreen ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))",
+    marginTop: "1.5rem",
+  };
+  
+  // Loading State
+  if (!initialized || !user) {
     return (
-        <div style={{ minHeight: '100vh', backgroundColor: BgColor, fontFamily: 'Inter, sans-serif' }}>
-            <nav style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: CardBg, padding: '1rem 0' }}>
-                <div style={{ maxWidth: '1120px', margin: '0 auto', padding: '0 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: PrimaryColor }}>Customer Ledger</h1>
-                    <Button variant="ghost" onClick={() => navigate(-1)} style={{ color: PrimaryColor }}>
-                        ← Back
-                    </Button>
-                </div>
-            </nav>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: LightBg }}>
+        <p style={{ color: MutedColor, fontSize: 18, fontWeight: 600 }}>Loading...</p>
+      </div>
+    );
+  }
 
-            <main style={{ maxWidth: '1120px', margin: '0 auto', padding: '2rem 1rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                <h1 style={{ fontSize: '2rem', fontWeight: 700, margin: 0, color: '#1f2937' }}>Customer Management ({isAdmin ? "**Admin View**" : "**Staff View**"})</h1>
-
-                {/* Global Message/Alert Display */}
-                {message && (
-                    <div style={{ 
-                        padding: '1rem', 
-                        borderRadius: '0.375rem', 
-                        backgroundColor: message.type === 'success' ? '#d1fae5' : '#fee2e2', 
-                        color: message.type === 'success' ? '#065f46' : '#991b1b', 
-                        fontWeight: 600,
-                        border: `1px solid ${message.type === 'success' ? '#a7f3d0' : '#fca5a5'}`,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                    }}>
-                        {message.text}
-                        <Button onClick={() => setMessage(null)} variant="ghost" style={{ color: message.type === 'success' ? '#065f46' : '#991b1b', padding: '0.25rem', fontSize: '1rem' }}>&times;</Button>
-                    </div>
-                )}
-
-                {/* --- ADD NEW CUSTOMER CARD (ADMIN ONLY) --- */}
-                {isAdmin && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Create New Customer</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <CustomerForm onAddCustomer={addCustomer} />
-                        </CardContent>
-                    </Card>
-                )}
-                
-                {/* --- CUSTOMERS LIST (History) --- */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Customer History ({filteredCustomers.length} Found)</CardTitle>
-                    </CardHeader>
-                    <CardContent style={{ paddingTop: 0 }}>
-                        {/* Search Bar Feature */}
-                        <div style={{ padding: '1rem 0 1.5rem 0' }}>
-                            <Input 
-                                label="Search Customers by Name, Phone, or Email" 
-                                name="search" 
-                                value={searchTerm} 
-                                onChange={(e) => setSearchTerm(e.target.value)} 
-                                style={{ padding: '0.75rem 1rem', fontSize: '1rem', marginBottom: 0 }}
-                                placeholder="e.g., Alice Johnson or 555-0101"
-                            />
-                        </div>
-                        {error && <p style={{ color: DangerColor, marginBottom: '1rem', fontWeight: 600 }}>{error}</p>}
-                        <CustomerTable
-                            customers={filteredCustomers}
-                            loading={loading}
-                            error={error}
-                            isAdmin={isAdmin}
-                            onView={handleViewDetails}
-                            onEdit={editCustomer}
-                            onDelete={deleteCustomer}
-                        />
-                    </CardContent>
-                </Card>
-
-            </main>
-
-            {/* Customer Details Modal */}
-            {selectedCustomer && (
-                <CustomerDetailsModal
-                    customer={selectedCustomer}
-                    onClose={() => setSelectedCustomer(null)}
-                />
-            )}
+  return (
+    <div
+      style={{
+        maxWidth: 1200,
+        margin: "0 auto",
+        padding: isSmallScreen ? "1rem" : "1.5rem",
+        backgroundColor: LightBg,
+        minHeight: "100vh",
+        gap: "2rem",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* Header and Controls */}
+      <div 
+        style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          flexDirection: isSmallScreen ? "column" : "row",
+          gap: isSmallScreen ? "1rem" : "0",
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              fontSize: isSmallScreen ? "1.5rem" : "1.875rem",
+              fontWeight: "700",
+              color: TextColor,
+              margin: 0,
+            }}
+          >
+            Your Customers
+          </h1>
+          <p style={{ color: MutedColor, marginTop: '0.25rem' }}>
+            Viewing **{customers.length}** customers assigned to **{user.id}**
+          </p>
         </div>
-    )
+        
+        <Button 
+          onClick={() => alert("Open CustomerForm modal/page")}
+          style={{ width: isSmallScreen ? "100%" : "auto" }}
+        >
+          <Plus size={16} />
+          Add New Customer
+        </Button>
+      </div>
+      
+      <hr style={{ borderTop: "1px solid #e5e7eb", margin: 0 }} />
+      
+      {/* Overview Card */}
+      <Card style={{ padding: "1.5rem", borderLeft: `4px solid ${PrimaryColor}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2 style={{ color: MutedColor, fontSize: 16, fontWeight: 600, margin: 0 }}>Total Sales from Your Customers</h2>
+            <ShoppingCart style={{ height: "1.5rem", width: "1.5rem", color: PrimaryColor }} />
+        </div>
+        <div style={{ fontSize: "1.875rem", fontWeight: "700", color: TextColor, marginTop: 8 }}>
+            {formatCurrency(totalCustomerSales)}
+        </div>
+        <p style={{ fontSize: '0.75rem', color: MutedColor, marginTop: 4 }}>
+            Total revenue generated by your assigned customers.
+        </p>
+      </Card>
+      
+      {/* Search Bar */}
+      <div style={{ position: 'relative' }}>
+        <Search style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', height: 18, width: 18, color: MutedColor }} />
+        <input
+          type="text"
+          placeholder="Search by name, email, or phone..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '0.75rem 0.75rem 0.75rem 40px',
+            border: '1px solid #e5e7eb',
+            borderRadius: '0.375rem',
+            fontSize: '1rem',
+            color: TextColor,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+          }}
+        />
+      </div>
+
+      {/* Customer List */}
+      <div>
+        <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: TextColor, marginBottom: '1rem' }}>
+          Customer List ({filteredCustomers.length})
+        </h2>
+        
+        {filteredCustomers.length === 0 ? (
+          <Card style={{ padding: '2rem', textAlign: 'center' }}>
+            <p style={{ color: MutedColor }}>
+              {searchTerm 
+                ? `No customers matched the search term: "${searchTerm}".` 
+                : "You currently have no customers assigned to your account."
+              }
+            </p>
+          </Card>
+        ) : (
+          <div style={listGridStyle}>
+            {filteredCustomers.map((customer) => (
+              <Card 
+                key={customer.id} 
+                onClick={() => alert(`Viewing details for: ${customer.name}`)}
+                style={{ padding: "1.5rem" }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', borderBottom: '1px solid #f3f4f6', paddingBottom: '1rem', marginBottom: '1rem' }}>
+                  <Users style={{ height: "1.5rem", width: "1.5rem", color: PrimaryColor }} />
+                  <strong style={{ fontSize: '1.125rem', fontWeight: 700, color: TextColor }}>{customer.name}</strong>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: MutedColor }}>
+                    <Mail size={14} />
+                    <span>{customer.email}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: MutedColor }}>
+                    <Phone size={14} />
+                    <span>{customer.phone}</span>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '1rem', marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ textAlign: 'left' }}>
+                        <div style={{ color: TextColor, fontWeight: 600 }}>{formatCurrency(customer.totalSales)}</div>
+                        <div style={{ fontSize: '0.75rem', color: MutedColor, display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                            <ShoppingCart size={12} />
+                            Total Sales
+                        </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                        <div style={{ color: TextColor, fontWeight: 600 }}>{customer.lastActive}</div>
+                        <div style={{ fontSize: '0.75rem', color: MutedColor, display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                            <Clock size={12} />
+                            Last Activity
+                        </div>
+                    </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer (Consistency) */}
+      <div style={{ marginTop: '2rem', textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem', paddingBottom: '2rem' }}>
+        <p>Powered by Patherfinder</p>
+        <p style={{ marginTop: '0.5rem' }}>All rights reserved © {new Date().getFullYear()}</p>
+      </div>
+    </div>
+  );
 }

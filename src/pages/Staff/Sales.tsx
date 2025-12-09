@@ -1,474 +1,785 @@
-/**
- * Note: This file uses TypeScript syntax (.tsx) to resolve implicit 'any' errors.
- * It uses mock components to maintain the single-file immersive requirement,
- * with explicit interfaces defined for all props to satisfy TypeScript.
- *
- * FIX: The 'user' state is now used in the navigation bar to fix TS6133 error.
- */
+// src/pages/Admin/Sales.tsx
 "use client"
+import React, { useState, useEffect, useMemo, PropsWithChildren, CSSProperties, useCallback, ChangeEvent } from 'react';
+import { app, auth, db, APP_ID, onAuthStateChanged } from '../../firebase'; // Assuming firebase.ts exports these
+import {
+    collection, query, onSnapshot, doc, runTransaction,
+    Timestamp, orderBy, limit, DocumentData, DocumentReference, serverTimestamp, increment, FieldValue, where
+} from 'firebase/firestore';
+import { User, signOut } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
+import {
+    ShoppingCart, Plus, Minus, Trash2, User as UserIcon, CreditCard,
+    Loader2, AlertTriangle, Search, ChevronDown, ChevronUp, DollarSign, X
+} from 'lucide-react';
 
-import React, { useState, useEffect, useRef, useCallback } from "react"
-// Mock hook implementations for standalone component demonstration
-// In a full Next.js/React environment, these would be imported normally.
-const useRouter = () => ({
-  push: (path: string) => console.log("Navigating to:", path),
-  back: () => console.log("Navigating back"),
-})
+/* ========================================================================== */
+/* CONFIG & UI STYLES (INLINE CSS TEMPLATE)                                   */
+/* ========================================================================== */
 
-interface UseReactToPrintConfig {
-    content: () => React.RefObject<HTMLDivElement>['current'] | null;
-}
-const useReactToPrint = (config: UseReactToPrintConfig) => {
-  return () => {
-    // Check if content() returns an element before accessing properties
-    const element = config.content();
-    console.log("Simulating print action for ID:", element?.id || 'Unknown');
-  };
+// --- Inline CSS Style Definitions (Consistent with CompanyExpenses.tsx) ---
+const PrimaryColor = '#0B3D91';
+const DestructiveColor = '#dc2626';
+const SuccessColor = '#15803d';
+const MutedColor = '#6b7280';
+const LightBg = '#f3f4f6';
+const OutlineBorderColor = '#e5e7eb';
+const WarningColor = '#d97706';
+
+// --- Placeholder UI Components (using inline styles) ---
+
+const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'ghost' | 'destructive' | 'icon' | 'success' }> = ({ children, onClick, style, disabled, type = 'button', variant = 'default', ...props }) => { 
+    let backgroundColor = PrimaryColor;
+    let color = 'white';
+    let border = '1px solid transparent';
+    let padding = '0.5rem 1rem';
+
+    if (variant === 'ghost') {
+        backgroundColor = 'transparent';
+        color = PrimaryColor;
+        border = '1px solid transparent';
+    } else if (variant === 'destructive') {
+        backgroundColor = DestructiveColor;
+    } else if (variant === 'success') {
+        backgroundColor = SuccessColor;
+    } else if (variant === 'icon') {
+        backgroundColor = 'transparent';
+        color = MutedColor;
+        padding = '0.2rem';
+        border = 'none';
+    }
+
+    const baseStyle: CSSProperties = {
+        padding,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        backgroundColor: disabled ? '#ccc' : backgroundColor,
+        color: color,
+        border: border,
+        borderRadius: '4px',
+        fontWeight: '500',
+        transition: 'background-color 0.2s, opacity 0.2s',
+        opacity: disabled ? 0.6 : 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        whiteSpace: 'nowrap',
+        ...style
+    };
+    return (
+        <button
+            onClick={onClick}
+            style={baseStyle}
+            disabled={disabled}
+            type={type}
+            {...props}
+        >
+            {children}
+        </button>
+    );
 };
 
-// --- MOCK UI COMPONENTS (Tailwind styled) ---
+const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
+    <input 
+        {...props} 
+        style={{ 
+            padding: '0.6rem 0.8rem', 
+            border: '1px solid #ccc', 
+            borderRadius: '4px', 
+            width: '100%', 
+            boxSizing: 'border-box', 
+            height: 40, 
+            ...props.style
+        }} 
+    />
+);
 
-interface ButtonProps {
-    children: React.ReactNode;
-    onClick?: (event?: React.MouseEvent<HTMLButtonElement>) => void;
-    variant?: 'ghost' | 'outline' | 'default';
-    size?: 'sm' | 'default';
-    className?: string;
-    disabled?: boolean;
-}
-const Button: React.FC<ButtonProps> = ({ children, onClick, className, disabled = false }) => 
-  <button 
-    className={`
-      font-semibold rounded-lg transition duration-150 
-      ${className || 'px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800'}
-    `} 
-    onClick={onClick} 
-    disabled={disabled}
-  >
-    {children}
-  </button>
+const Card: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <div style={{ border: '1px solid ' + OutlineBorderColor, borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem', backgroundColor: '#fff', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', ...style }}>{children}</div>;
+const CardHeader: React.FC<PropsWithChildren> = ({ children }) => <div>{children}</div>;
+const CardTitle: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem', ...style }}>{children}</h2>;
+const CardContent: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <div style={{ paddingTop: '0.5rem', ...style }}>{children}</div>;
 
-interface InputProps {
-    type: 'text' | 'number';
-    placeholder: string;
-    value: string | number;
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    className?: string;
-}
-const Input: React.FC<InputProps> = ({ type, placeholder, value, onChange, className }) => 
-  <input 
-    type={type} 
-    placeholder={placeholder} 
-    value={value} 
-    onChange={onChange} 
-    className={`p-3 border rounded-lg focus:ring-blue-500 focus:border-blue-500 w-full ${className}`} 
-  />
-
-interface CardProps {
-    children: React.ReactNode;
-    className?: string;
-}
-const Card: React.FC<CardProps> = ({ children, className }) => 
-  <div className={`border rounded-xl shadow-lg bg-white ${className}`}>{children}</div>
-
-interface CardHeaderProps { children: React.ReactNode; }
-const CardHeader: React.FC<CardHeaderProps> = ({ children }) => <div>{children}</div>
-
-interface CardTitleProps { children: React.ReactNode; }
-const CardTitle: React.FC<CardTitleProps> = ({ children }) => <h2 className="text-2xl font-bold text-gray-800">{children}</h2>
-
-interface CardContentProps {
-    children: React.ReactNode;
-    className?: string;
-}
-const CardContent: React.FC<CardContentProps> = ({ children, className }) => <div className={className}>{children}</div>
-
-interface TableProps { children: React.ReactNode; }
-const Table: React.FC<TableProps> = ({ children }) => <table className="w-full border-collapse">{children}</table>
-
-interface TableBodyProps { children: React.ReactNode; }
-const TableBody: React.FC<TableBodyProps> = ({ children }) => <tbody>{children}</tbody>
-
-interface TableCellProps {
-    children: React.ReactNode;
-    className?: string;
-    colSpan?: number;
-}
-const TableCell: React.FC<TableCellProps> = ({ children, className, colSpan }) => 
-  <td {...(colSpan !== undefined && { colSpan })} className={`p-4 border-t border-gray-200 ${className}`}>{children}</td>
-
-interface TableHeadProps { children: React.ReactNode; }
-const TableHead: React.FC<TableHeadProps> = ({ children }) => <th className="p-4 text-left font-bold text-gray-600 uppercase bg-gray-100">{children}</th>
-
-interface TableHeaderProps { children: React.ReactNode; }
-const TableHeader: React.FC<TableHeaderProps> = ({ children }) => <thead>{children}</thead>
-
-interface TableRowProps { 
-    children: React.ReactNode; 
-    className?: string;
-    key?: React.Key;
-}
-const TableRow: React.FC<TableRowProps> = ({ children, className }) => <tr className={`hover:bg-gray-50 transition duration-100 ${className}`}>{children}</tr>
-
-// --- DATA INTERFACES ---
-
-interface Sale {
-  id: number
-  customer_name: string
-  total_amount: number
-  paid_amount: number
-  payment_status: 'outstanding' | 'paid'
-  payment_method: 'cash' | 'transfer' | 'check'
-}
-
-interface NewSale {
-  customer_name: string
-  total_amount: number
-  paid_amount: number
-  payment_status: 'outstanding' | 'paid'
-  payment_method: 'cash' | 'transfer' | 'check'
-}
-
-const LOCAL_STORAGE_KEY = "sales_data_v1"
-
-// Helper to get the next sequential ID
-const getNextId = (currentSales: Sale[]): number => {
-  if (currentSales.length === 0) return 1
-  const maxId = currentSales.reduce((max, sale) => Math.max(max, sale.id), 0)
-  return maxId + 1
-}
-
-// Explicitly typing the input change event handler function
-const getInputValue = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>): string =>
-  e.currentTarget.value
-
-export default function SalesPage() {
-  const router = useRouter()
-  // Corrected Map type for receiptRefs
-  const receiptRefs = useRef<Map<number, HTMLDivElement>>(new Map())
-
-  const [sales, setSales] = useState<Sale[]>([])
-  // Typed user state
-  const [user, setUser] = useState<null | { id: number, name: string }>(null) // State is now used in JSX to fix TS6133
-  const [newSale, setNewSale] = useState<NewSale>({
-    customer_name: "",
-    total_amount: 0,
-    paid_amount: 0,
-    payment_status: "outstanding",
-    payment_method: "cash",
-  })
-  const [printId, setPrintId] = useState<number | null>(null)
-
-  // --- LOCAL STORAGE FUNCTIONS ---
-
-  const loadSalesFromLocal = useCallback((): Sale[] => {
-    try {
-      const data = localStorage.getItem(LOCAL_STORAGE_KEY)
-      if (data) {
-        return JSON.parse(data) as Sale[]
-      }
-    } catch (error) {
-      console.error("Error loading sales from local storage:", error)
+const Alert: React.FC<PropsWithChildren & { variant?: 'default' | 'destructive' | 'warning', customStyle?: CSSProperties }> = ({ children, variant, customStyle }) => {
+    let bgColor = '#d4edda';
+    let borderColor = '#c3e6cb';
+    let textColor = '#155724';
+    if (variant === 'destructive') {
+        bgColor = '#f8d7da';
+        borderColor = '#f5c6cb';
+        textColor = '#721c24';
+    } else if (variant === 'warning') {
+        bgColor = '#fff3cd';
+        borderColor = '#ffeeba';
+        textColor = '#856404';
     }
-    return []
-  }, [])
+    return (
+        <div style={{
+            padding: '1rem',
+            backgroundColor: bgColor,
+            border: `1px solid ${borderColor}`,
+            color: textColor,
+            borderRadius: '4px',
+            marginBottom: '1rem',
+            ...customStyle
+        }}>
+            {children}
+        </div>
+    );
+};
+const AlertDescription: React.FC<PropsWithChildren> = ({ children }) => <p style={{ margin: 0 }}>{children}</p>;
 
-  const saveSalesToLocal = useCallback((currentSales: Sale[]): void => {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentSales))
-      setSales(currentSales) // Update state after successful save
-    } catch (error) {
-      console.error("Error saving sales to local storage:", error)
-    }
-  }, [])
-
-  // --- EFFECTS ---
-
-  useEffect(() => {
-    // 1. Check user login (simulated check)
-    const currentUserStr = localStorage.getItem("currentUser")
-    if (!currentUserStr) {
-      // router.push("/login") // Commenting out to allow component to run standalone
-      console.log("No user found, simulating anonymous login.")
-      // Simulate setting a user for demonstration
-      setUser({ id: 99, name: "Admin User" })
-    } else {
-      try {
-          // Explicitly cast the parsed user object
-          setUser(JSON.parse(currentUserStr) as { id: number, name: string })
-      } catch (e) {
-          console.error("Failed to parse currentUser from localStorage", e)
-          // router.push("/login") // Commenting out to allow component to run standalone
-      }
-    }
-    
-    // 2. Load sales data
-    const initialSales = loadSalesFromLocal()
-    setSales(initialSales)
-  }, [loadSalesFromLocal, router])
-
-  // --- HANDLERS ---
-
-  const handleAddSale = (): void => {
-    // Basic validation
-    if (!newSale.customer_name || newSale.total_amount <= 0) {
-      console.log("Validation failed: Customer name or total amount invalid.")
-      return
-    }
-
-    // 1. Create the new Sale object with a unique ID
-    const currentSales = loadSalesFromLocal()
-    const newId = getNextId(currentSales)
-
-    const newSaleRecord: Sale = {
-      id: newId,
-      customer_name: newSale.customer_name,
-      total_amount: newSale.total_amount,
-      paid_amount: newSale.paid_amount,
-      payment_status: newSale.paid_amount >= newSale.total_amount ? "paid" : "outstanding",
-      payment_method: newSale.payment_method,
-    }
-
-    // 2. Update the array and save
-    const updatedSales = [...currentSales, newSaleRecord]
-    saveSalesToLocal(updatedSales)
-
-    // 3. Reset form
-    setNewSale({
-      customer_name: "",
-      total_amount: 0,
-      paid_amount: 0,
-      payment_status: "outstanding",
-      payment_method: "cash",
-    })
-  }
-
-  // Handle print setup (using the provided hook)
-  const handlePrint = useReactToPrint({
-    // Content function now explicitly returns the correct type
-    content: () => (printId !== null ? receiptRefs.current.get(printId) ?? null : null),
-  })
-
-  // Print Receipt Component (hidden for printing purposes)
-  const Receipt: React.FC<{ sale: Sale }> = ({ sale }) => (
-    <div
-      id={`receipt-${sale.id}`}
-      ref={(el: HTMLDivElement | null) => {
-        if (el) receiptRefs.current.set(sale.id, el)
-      }}
-      // Important: Use position: absolute and visibility: hidden for printing
-      style={{ 
-        position: "absolute", 
-        visibility: "hidden", 
-        top: "-9999px", 
-        left: "-9999px", 
-        padding: '16px', 
-        width: '300px', 
-        border: '1px dashed #333',
-        backgroundColor: '#fff',
-        fontFamily: 'monospace'
-      }}
+const Table: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, ...style }}>{children}</table>;
+const TableHeader: React.FC<PropsWithChildren> = ({ children }) => <thead>{children}</thead>;
+const TableBody: React.FC<PropsWithChildren> = ({ children }) => <tbody>{children}</tbody>;
+const TableRow: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <tr style={{ borderBottom: '1px solid #eee', ...style }}>{children}</tr>;
+const TableHead: React.FC<PropsWithChildren & { style?: CSSProperties, onClick?: () => void, isSortable?: boolean }> = ({ children, style, onClick, isSortable = false }) => (
+    <th
+        onClick={onClick}
+        style={{
+            padding: '0.75rem',
+            textAlign: 'left',
+            fontWeight: '600',
+            borderBottom: '2px solid #ccc',
+            backgroundColor: '#f9fafb',
+            cursor: isSortable ? 'pointer' : 'default',
+            ...style
+        }}
     >
-      <div id={sale.id.toString()}>
-        <h2 style={{fontSize: '18px', marginBottom: '12px', fontWeight: 'bold', borderBottom: '1px solid #ccc', paddingBottom: '8px'}}>
-          Sales Receipt (ID: {sale.id})
-        </h2>
-        <p style={{marginBottom: '4px'}}>Date: {new Date().toLocaleDateString()}</p>
-        <p style={{marginBottom: '4px'}}>Customer: {sale.customer_name}</p>
-        <hr style={{margin: '12px 0', borderTop: '1px dashed #999'}} />
-        <p style={{marginBottom: '4px'}}>Total: <strong style={{float: 'right'}}>₦{sale.total_amount.toFixed(2)}</strong></p>
-        <p style={{marginBottom: '4px'}}>Paid: <strong style={{float: 'right'}}>₦{sale.paid_amount.toFixed(2)}</strong></p>
-        <p style={{marginBottom: '4px'}}>Status: <strong style={{float: 'right'}}>{sale.payment_status.toUpperCase()}</strong></p>
-        <p style={{marginBottom: '4px'}}>Method: <strong style={{float: 'right'}}>{sale.payment_method.toUpperCase()}</strong></p>
-        <hr style={{margin: '12px 0', borderTop: '1px dashed #999'}} />
-        <p style={{fontSize: '12px', textAlign: 'center', fontWeight: 'bold'}}>Thank you for your business!</p>
-      </div>
-    </div>
-  )
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            {children}
+            {isSortable && <ChevronDown size={14} style={{ opacity: 0.5 }} />}
+        </div>
+    </th>
+);
+const TableCell: React.FC<PropsWithChildren & { colSpan?: number, style?: CSSProperties }> = ({ children, style, colSpan }) => <td colSpan={colSpan} style={{ padding: '0.75rem', verticalAlign: 'middle', borderBottom: '1px solid #eee', ...style }}>{children}</td>;
 
-  // Summary calculations
-  const totalSales = sales.reduce((sum, sale) => sum + sale.total_amount, 0)
-  const totalPaid = sales.reduce((sum, sale) => sum + sale.paid_amount, 0)
-  const totalOutstanding = totalSales - totalPaid
 
-  return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
-      <nav className="flex items-center justify-between border-b bg-white px-6 py-4 shadow-sm">
-        <Button
-          variant="ghost"
-          onClick={() => router.back()}
-          className="text-blue-600 hover:text-blue-800 transition duration-150 p-2"
-        >
-          ← Back to Dashboard
-        </Button>
-        {/* FIX: Used the 'user' state here to resolve the TS6133 warning */}
-        {user && (
-          <p className="text-lg font-medium text-gray-700 hidden sm:block">
-            Welcome, <span className="text-blue-600 font-bold">{user.name}</span>
-          </p>
-        )}
-      </nav>
+// --- Utility Functions ---
+const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(amount);
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <h1 className="text-4xl font-extrabold text-gray-800 mb-8">Sales & POS Dashboard</h1>
+/* ========================================================================== */
+/* DATA TYPES (REQUIRED BY PROMPT)                                            */
+/* ========================================================================== */
 
-        {/* Summary Section */}
-        <Card className="mb-8 p-6 border-2 border-gray-100">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 text-center">
-            {/* Total Sales */}
-            <div className="p-5 bg-green-50 rounded-xl shadow-lg hover:shadow-xl transition duration-300 border-b-4 border-green-500">
-              <p className="text-sm font-medium text-green-700 uppercase tracking-wider">Total Sales</p>
-              <p className="text-4xl font-extrabold text-green-600 mt-2">₦{totalSales.toFixed(2)}</p>
-            </div>
-            {/* Total Paid */}
-            <div className="p-5 bg-blue-50 rounded-xl shadow-lg hover:shadow-xl transition duration-300 border-b-4 border-blue-500">
-              <p className="text-sm font-medium text-blue-700 uppercase tracking-wider">Total Paid</p>
-              <p className="text-4xl font-extrabold text-blue-600 mt-2">₦{totalPaid.toFixed(2)}</p>
-            </div>
-            {/* Total Outstanding */}
-            <div className="p-5 bg-red-50 rounded-xl shadow-lg hover:shadow-xl transition duration-300 border-b-4 border-red-500">
-              <p className="text-sm font-medium text-red-700 uppercase tracking-wider">Outstanding Balance</p>
-              <p className="text-4xl font-extrabold text-red-600 mt-2">₦{totalOutstanding.toFixed(2)}</p>
-            </div>
-          </div>
-        </Card>
-
-        {/* New Sale Form */}
-        <Card className="mb-10 p-6">
-          <CardHeader>
-            <CardTitle>Record New Sale</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6 pt-6">
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Input
-                type="text"
-                placeholder="Customer Name"
-                value={newSale.customer_name}
-                onChange={(e) =>
-                  setNewSale({ ...newSale, customer_name: getInputValue(e) })
-                }
-                className="w-full"
-              />
-              <Input
-                type="number"
-                placeholder="Total Amount (₦)"
-                value={newSale.total_amount === 0 ? "" : newSale.total_amount}
-                onChange={(e) => {
-                  const total = Number(getInputValue(e as React.ChangeEvent<HTMLInputElement>)) || 0
-                  setNewSale((prevSale) => ({
-                    ...prevSale,
-                    total_amount: total,
-                    payment_status:
-                      prevSale.paid_amount >= total ? "paid" : "outstanding",
-                  }))
-                }}
-                className="w-full"
-              />
-              <Input
-                type="number"
-                placeholder="Amount Paid (₦)"
-                value={newSale.paid_amount === 0 ? "" : newSale.paid_amount}
-                onChange={(e) => {
-                  const paid = Number(getInputValue(e as React.ChangeEvent<HTMLInputElement>)) || 0
-                  setNewSale((prevSale) => ({
-                    ...prevSale,
-                    paid_amount: paid,
-                    payment_status:
-                      paid >= prevSale.total_amount ? "paid" : "outstanding",
-                  }))
-                }}
-                className="w-full"
-              />
-              <select
-                className="border rounded-lg px-3 py-3 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm w-full"
-                value={newSale.payment_method}
-                onChange={(e) =>
-                  setNewSale({ ...newSale, payment_method: getInputValue(e as React.ChangeEvent<HTMLSelectElement>) as 'cash' | 'transfer' | 'check' })
-                }
-              >
-                <option value="cash">Cash</option>
-                <option value="transfer">Transfer</option>
-                <option value="check">Check</option>
-              </select>
-            </div>
-            <Button 
-              onClick={handleAddSale} 
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl shadow-lg transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!newSale.customer_name || newSale.total_amount <= 0 || newSale.paid_amount > newSale.total_amount}
-            >
-              <span className="text-lg">💰 Record New Transaction</span>
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Sales Table */}
-        <Card className="p-6">
-          <CardHeader>
-            <CardTitle>Detailed Sales Records</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <div className="overflow-x-auto rounded-lg shadow-inner">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50 border-b-2 border-gray-200">
-                    <TableHead>ID</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Total (₦)</TableHead>
-                    <TableHead>Paid (₦)</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sales.length > 0 ? (
-                    sales.slice().sort((a, b) => b.id - a.id).map((sale) => (
-                      <TableRow
-                        key={sale.id}
-                        className={sale.payment_status === "outstanding" ? "bg-red-50 hover:bg-red-100" : "bg-white"}
-                      >
-                        <TableCell className="text-gray-500 font-mono">{sale.id}</TableCell>
-                        <TableCell className="font-medium">{sale.customer_name}</TableCell>
-                        <TableCell className="font-semibold text-gray-700">₦{sale.total_amount.toFixed(2)}</TableCell>
-                        <TableCell className="text-blue-600 font-medium">₦{sale.paid_amount.toFixed(2)}</TableCell>
-                        <TableCell className="text-gray-600 capitalize">{sale.payment_method}</TableCell>
-                        <TableCell
-                          className={`font-bold uppercase ${
-                            sale.payment_status === "outstanding" ? "text-red-700" : "text-green-600"
-                          }`}
-                        >
-                          {sale.payment_status}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setPrintId(sale.id)
-                              handlePrint()
-                            }}
-                            className="text-sm bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md px-3 py-1 shadow-md"
-                          >
-                            🖨️ Print Receipt
-                          </Button>
-                          <Receipt sale={sale} />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      {/* colSpan is now explicitly provided here to cover all 7 columns */}
-                      <TableCell colSpan={7} className="text-center text-gray-500 py-6">
-                        No sales recorded yet. Start by adding a new sale above!
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
-    </div>
-  )
+interface InventoryItem {
+    id: string;
+    name: string;
+    sku?: string;
+    units_available: number; // Stock level
+    unit_price: number; // Selling price
+    low_stock_threshold?: number;
 }
+interface Customer {
+    id: string;
+    name: string; // Shorter name for display
+    fullName: string;
+    phone?: string;
+    email?: string;
+}
+interface SaleItem {
+    itemId: string;
+    itemName: string;
+    quantity: number;
+    price: number; // Unit price at the time of sale (this is where item.unit_price is mapped)
+}
+// CartItem extends InventoryItem, so it has all InventoryItem properties including 'unit_price'
+interface CartItem extends InventoryItem {
+    quantity: number;
+}
+interface SaleRecord {
+    saleId: string;
+    customerId: string;
+    customerName: string;
+    items: SaleItem[];
+    subtotal: number;
+    discount: number;
+    total: number;
+    paid: number;
+    balance: number;
+    excess: number;
+    paymentMethod: "Cash" | "Transfer" | "POS" | "Others";
+    timestamp: Timestamp;
+    userId: string;
+    userName: string;
+}
+interface LedgerTransaction {
+    transactionType: "sale" | "payment";
+    saleId?: string;
+    paymentId?: string;
+    amount: number; // Total value of the transaction
+    paid: number; // Actual amount paid in this transaction
+    balance: number; // Balance remaining (owing)
+    excess: number; // Excess remaining (overpaid)
+    items?: SaleItem[];
+    date: Timestamp;
+    timestamp: FieldValue;
+    userId: string;
+    status: "owing" | "paid" | "overpaid";
+}
+
+// --- Constants ---
+const PAYMENT_METHODS: SaleRecord["paymentMethod"][] = ["Cash", "Transfer", "POS", "Others"];
+
+/* ========================================================================== */
+/* CORE COMPONENT: SalesPageBase                                              */
+/* ========================================================================== */
+
+const SalesPage: React.FC = () => {
+    const navigate = useNavigate();
+    const [user, setUser] = useState<User | null>(null);
+    const [userRole, setUserRole] = useState<'admin' | 'staff' | 'unknown'>('unknown'); // Used for routing/permissions
+    const [inventory, setInventory] = useState<InventoryItem[]>([]);
+    const [customers, setCustomers] = useState<Customer[]>([]);
+
+    // Sales Form State
+    const [searchTerm, setSearchTerm] = useState(''); // For searching inventory
+    const [customerSearchTerm, setCustomerSearchTerm] = useState(''); // For searching customers
+    const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+    const [cart, setCart] = useState<CartItem[]>([]);
+    const [discount, setDiscount] = useState(0);
+    const [amountPaid, setAmountPaid] = useState(0);
+    const [paymentMethod, setPaymentMethod] = useState<SaleRecord["paymentMethod"]>(PAYMENT_METHODS[0]);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [transactionMessage, setTransactionMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+    // --- Firebase Auth & Role Check ---
+    useEffect(() => {
+        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser) {
+                setUser(currentUser);
+                const path = window.location.pathname;
+                if (path.startsWith('/admin')) {
+                    setUserRole('admin');
+                } else {
+                    setUserRole('staff');
+                }
+            } else {
+                navigate('/login'); // Redirect to login if not authenticated
+            }
+        });
+        return () => unsubscribeAuth();
+    }, [navigate]);
+
+    // --- Firestore Listeners for Inventory and Customers ---
+    useEffect(() => {
+        if (!user) return;
+        setTransactionMessage(null);
+
+        // 1. Inventory Listener
+        const inventoryRef = collection(db, 'inventory');
+        const qInv = query(inventoryRef, orderBy('name'));
+        const unsubscribeInv = onSnapshot(qInv, (snapshot) => {
+            const items: InventoryItem[] = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data() as Omit<InventoryItem, 'id'>
+            }));
+            setInventory(items);
+        }, (error) => console.error("Error fetching inventory:", error));
+
+        // 2. Customers Listener
+        const customersRef = collection(db, 'customers');
+        const qCust = query(customersRef, orderBy('name'));
+        const unsubscribeCust = onSnapshot(qCust, (snapshot) => {
+            const custs: Customer[] = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data() as Omit<Customer, 'id'>
+            }));
+            setCustomers(custs);
+        }, (error) => console.error("Error fetching customers:", error));
+
+        return () => {
+            unsubscribeInv();
+            unsubscribeCust();
+        };
+    }, [user]);
+
+    // --- Data Processing & Calculations ---
+    const filteredInventory = useMemo(() => {
+        const term = searchTerm.toLowerCase();
+        return inventory.filter(item =>
+            item.units_available > 0 &&
+            (item.name.toLowerCase().includes(term) || item.sku?.toLowerCase().includes(term))
+        );
+    }, [inventory, searchTerm]);
+
+    const filteredCustomers = useMemo(() => {
+        const term = customerSearchTerm.toLowerCase();
+        if (!term) return customers;
+        return customers.filter(c =>
+            c.name.toLowerCase().includes(term) || c.fullName.toLowerCase().includes(term)
+        );
+    }, [customers, customerSearchTerm]);
+
+    const calculations = useMemo(() => {
+        // ✅ FIX: Corrected item.price to item.unit_price (Error 1 fix)
+        const subtotal = cart.reduce((total, item) => total + item.unit_price * item.quantity, 0); 
+        const grandTotal = Math.max(0, subtotal - discount); // Grand Total cannot be negative
+        const balance = Math.max(0, grandTotal - amountPaid);
+        const excess = Math.max(0, amountPaid - grandTotal);
+        
+        return { subtotal, grandTotal, balance, excess };
+    }, [cart, discount, amountPaid]);
+
+    const canCheckout = useMemo(() => {
+        return cart.length > 0 && selectedCustomer !== null && calculations.grandTotal > 0 && !isProcessing;
+    }, [cart.length, selectedCustomer, calculations.grandTotal, isProcessing]);
+
+    // --- Cart Actions ---
+    const handleAddToCart = (item: InventoryItem) => {
+        setTransactionMessage(null);
+        setCart(prevCart => {
+            const existingItem = prevCart.find(c => c.id === item.id);
+            if (existingItem) {
+                if (existingItem.quantity + 1 > item.units_available) {
+                    setTransactionMessage({ type: 'error', message: `Cannot add more than ${item.units_available} units of ${item.name}.` });
+                    return prevCart;
+                }
+                return prevCart.map(c =>
+                    c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c
+                );
+            } else {
+                if (item.units_available <= 0) {
+                     setTransactionMessage({ type: 'error', message: `No stock for ${item.name}.` });
+                    return prevCart;
+                }
+                // ✅ FIX: Cleaned up object creation using spread operator for all InventoryItem properties (Error 2 fix context)
+                return [...prevCart, { 
+                    ...item,
+                    quantity: 1 
+                }];
+            }
+        });
+    };
+
+    const updateCartQuantity = (itemId: string, delta: number) => {
+        setTransactionMessage(null);
+        setCart(prevCart => {
+            const itemToUpdate = prevCart.find(c => c.id === itemId);
+            if (!itemToUpdate) return prevCart;
+
+            const newQuantity = itemToUpdate.quantity + delta;
+
+            if (newQuantity > itemToUpdate.units_available) {
+                 setTransactionMessage({ type: 'error', message: `Cannot exceed ${itemToUpdate.units_available} units.` });
+                 return prevCart;
+            }
+
+            const updatedCart = prevCart.map(c => {
+                if (c.id === itemId) {
+                    if (newQuantity < 1) return null;
+                    return { ...c, quantity: newQuantity };
+                }
+                return c;
+            }).filter(Boolean) as CartItem[];
+            
+            return updatedCart;
+        });
+    };
+
+    const removeFromCart = (itemId: string) => {
+        setTransactionMessage(null);
+        setCart(prevCart => prevCart.filter(c => c.id !== itemId));
+    };
+    
+    const clearCart = () => {
+        setCart([]);
+        setSelectedCustomer(null);
+        setDiscount(0);
+        setAmountPaid(0);
+        setPaymentMethod(PAYMENT_METHODS[0]);
+        setTransactionMessage(null);
+        setCustomerSearchTerm('');
+    };
+
+    // --- Checkout Logic (Firestore runTransaction) ---
+    const handleCheckout = async () => {
+        if (!canCheckout || !user) {
+            setTransactionMessage({ type: 'error', message: "Please select a customer and add items to the cart." });
+            return;
+        }
+
+        setIsProcessing(true);
+        setTransactionMessage(null);
+        
+        const customerRef = doc(db, 'customers', selectedCustomer!.id);
+        const saleRef = doc(collection(db, 'sales'));
+        const ledgerRef = doc(collection(db, `customerLedger/${selectedCustomer!.id}/transactions`));
+
+        const { subtotal, grandTotal, balance, excess } = calculations;
+
+        try {
+            await runTransaction(db, async (transaction) => {
+                
+                // 1. Check Inventory Stock and Update
+                const inventoryUpdates: { ref: DocumentReference, quantitySold: number, newStock: number }[] = [];
+
+                for (const item of cart) {
+                    const inventoryDocRef = doc(db, 'inventory', item.id);
+                    const inventoryDoc = await transaction.get(inventoryDocRef);
+                    
+                    if (!inventoryDoc.exists()) {
+                        throw new Error(`Item ${item.name} not found in inventory.`);
+                    }
+                    
+                    const currentStock = inventoryDoc.data()?.units_available || 0;
+                    const newStock = currentStock - item.quantity;
+                    
+                    if (newStock < 0) {
+                        throw new Error(`Insufficient stock for ${item.name}. Available: ${currentStock}, Requested: ${item.quantity}.`);
+                    }
+                    
+                    inventoryUpdates.push({ ref: inventoryDocRef, quantitySold: item.quantity, newStock });
+                }
+
+                // 2. Execute Inventory Updates (Batch update simulated via transaction)
+                inventoryUpdates.forEach(update => {
+                    transaction.update(update.ref, { units_available: update.newStock });
+                });
+
+                // 3. Create Sale Record
+                const saleRecord: SaleRecord = {
+                    saleId: saleRef.id,
+                    customerId: selectedCustomer!.id,
+                    customerName: selectedCustomer!.name,
+                    items: cart.map(item => ({ 
+                        itemId: item.id, 
+                        itemName: item.name, 
+                        quantity: item.quantity, 
+                        // ✅ FIX: Corrected mapping from item.unit_price (CartItem) to price (SaleItem)
+                        price: item.unit_price 
+                    })),
+                    subtotal,
+                    discount,
+                    total: grandTotal,
+                    paid: amountPaid,
+                    balance,
+                    excess,
+                    paymentMethod,
+                    timestamp: Timestamp.now(),
+                    userId: user.uid,
+                    userName: user.email || user.uid.slice(0, 5), // Placeholder for staff name
+                };
+                transaction.set(saleRef, saleRecord);
+
+                // 4. Create Customer Ledger Entry
+                const ledgerStatus: LedgerTransaction["status"] = 
+                    balance > 0 ? "owing" : 
+                    excess > 0 ? "overpaid" : "paid";
+
+                const ledgerEntry: LedgerTransaction = {
+                    transactionType: "sale",
+                    saleId: saleRef.id,
+                    amount: grandTotal,
+                    paid: amountPaid,
+                    balance: balance,
+                    excess: excess,
+                    items: saleRecord.items,
+                    date: Timestamp.now(),
+                    timestamp: serverTimestamp(),
+                    userId: user.uid,
+                    status: ledgerStatus,
+                };
+                transaction.set(ledgerRef, ledgerEntry);
+
+                // 5. Update Customer's totalDue/totalExcess field (Optional Indexing field)
+                if (balance > 0) {
+                    transaction.update(customerRef, { totalDue: increment(balance) });
+                }
+                
+                return saleRecord; // Return the sale record for success message
+            });
+
+            setTransactionMessage({ type: 'success', message: `Sale ID ${saleRef.id.slice(0, 8)} completed successfully! Total: ${formatCurrency(grandTotal)}.` });
+            clearCart();
+            setIsProcessing(false);
+
+        } catch (error: any) {
+            console.error("Firestore Transaction failed:", error);
+            setTransactionMessage({ type: 'error', message: `Transaction failed: ${error.message || "Unknown error."}` });
+            setIsProcessing(false);
+        }
+    };
+
+    // --- RENDER ---
+    if (userRole === 'unknown') {
+        return <div style={{ minHeight: '100vh', backgroundColor: LightBg, display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem' }}>Loading User Profile...</div>;
+    }
+
+    return (
+        <div style={{ minHeight: '100vh', backgroundColor: LightBg }}>
+            <nav style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Button
+                    variant="default"
+                    style={{ backgroundColor: 'transparent', color: PrimaryColor, borderWidth: '1px', borderStyle: 'solid', borderColor: '#ccc' }}
+                    onClick={() => navigate(userRole === 'admin' ? '/admin' : '/staff')}
+                >
+                    ← Dashboard
+                </Button>
+                <Button variant="destructive" onClick={() => signOut(auth).then(() => navigate('/login'))}>
+                    Logout
+                </Button>
+            </nav>
+            <main style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2rem',
+                maxWidth: '1400px',
+                margin: '0 auto',
+                padding: '2rem 1rem',
+                width: '100%'
+            }}>
+                <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: PrimaryColor }}>Point of Sale ({userRole.toUpperCase()}) <ShoppingCart size={28} style={{ verticalAlign: 'middle' }} /></h1>
+                
+                {transactionMessage && (
+                    <Alert variant={transactionMessage.type === 'error' ? 'destructive' : 'default'} customStyle={{ animation: 'fadeIn 0.5s' }}>
+                        <AlertDescription>{transactionMessage.message}</AlertDescription>
+                    </Alert>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr', gap: '2rem' }}>
+                    
+                    {/* LEFT PANE: INVENTORY AND CUSTOMER */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                        
+                        {/* 1. Customer Search & Selection */}
+                        <Card>
+                            <CardTitle style={{ marginBottom: '0.5rem', fontSize: '1.25rem' }}>Customer Selection</CardTitle>
+                            <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                                <Input
+                                    type="text"
+                                    placeholder="Search customer by name..."
+                                    value={customerSearchTerm}
+                                    onChange={(e) => setCustomerSearchTerm(e.target.value)}
+                                    style={{ paddingLeft: '2.5rem' }}
+                                />
+                                <Search size={20} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: MutedColor }} />
+                            </div>
+                            
+                            <select
+                                style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '0.6rem 0.8rem', width: '100%', height: 40, backgroundColor: 'white' }}
+                                value={selectedCustomer?.id || ''}
+                                onChange={(e) => {
+                                    const customerId = e.target.value;
+                                    setSelectedCustomer(customers.find(c => c.id === customerId) || null);
+                                    setTransactionMessage(null);
+                                }}
+                            >
+                                <option value="">{selectedCustomer ? `Selected: ${selectedCustomer.name}` : '--- Select Customer ---'}</option>
+                                {filteredCustomers.map(c => (
+                                    <option key={c.id} value={c.id}>{c.fullName} ({c.name})</option>
+                                ))}
+                            </select>
+                            {!selectedCustomer && (
+                                <Alert variant='warning' customStyle={{ marginTop: '1rem', marginBottom: 0 }}>
+                                    <AlertDescription>⚠️ Select a customer to begin a transaction.</AlertDescription>
+                                </Alert>
+                            )}
+                        </Card>
+
+                        {/* 2. Inventory Search & List */}
+                        <Card style={{ flex: 1, minHeight: '400px' }}>
+                            <CardHeader>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <CardTitle style={{ marginBottom: 0, fontSize: '1.25rem' }}>Stock List</CardTitle>
+                                    <div style={{ position: 'relative', width: '300px' }}>
+                                        <Input
+                                            type="text"
+                                            placeholder="Search product by name or SKU..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            style={{ paddingLeft: '2.5rem' }}
+                                        />
+                                        <Search size={20} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: MutedColor }} />
+                                    </div>
+                                </div>
+                            </CardHeader>
+                            <CardContent style={{ marginTop: '1rem' }}>
+                                <div style={{ overflowY: 'auto', maxHeight: '350px', border: '1px solid #eee', borderRadius: '4px' }}>
+                                    <Table style={{ border: 'none' }}>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead style={{ width: '45%' }}>Product Name</TableHead>
+                                                <TableHead style={{ width: '25%', textAlign: 'right' }}>Price (₦)</TableHead>
+                                                <TableHead style={{ width: '15%', textAlign: 'center' }}>Stock</TableHead>
+                                                <TableHead style={{ width: '15%' }}>Action</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {filteredInventory.map((item, index) => (
+                                                <TableRow 
+                                                    key={item.id} 
+                                                    style={{ backgroundColor: index % 2 === 1 ? '#f9f9f9' : '#fff' }}
+                                                >
+                                                    <TableCell style={{ fontWeight: '500', fontSize: '0.9rem' }}>{item.name}</TableCell>
+                                                    <TableCell style={{ textAlign: 'right' }}>{formatCurrency(item.unit_price)}</TableCell>
+                                                    <TableCell style={{ 
+                                                        textAlign: 'center', 
+                                                        fontWeight: 'bold', 
+                                                        color: item.units_available <= (item.low_stock_threshold || 10) ? WarningColor : SuccessColor,
+                                                        fontSize: '0.9rem'
+                                                    }}>
+                                                        {item.units_available}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button 
+                                                            variant="default" 
+                                                            onClick={() => handleAddToCart(item)} 
+                                                            disabled={item.units_available <= 0}
+                                                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}
+                                                        >
+                                                            <Plus size={16} /> Add
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                            {filteredInventory.length === 0 && (
+                                                <TableRow>
+                                                    <TableCell colSpan={4} style={{ textAlign: 'center', color: MutedColor, padding: '1rem' }}>
+                                                        No stock items found or available.
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    {/* RIGHT PANE: CART AND CHECKOUT */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                        
+                        {/* 3. Sales Cart */}
+                        <Card style={{ flex: 1 }}>
+                            <CardHeader>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <CardTitle style={{ marginBottom: 0, fontSize: '1.25rem' }}>Shopping Cart ({cart.length})</CardTitle>
+                                    <Button variant="ghost" onClick={clearCart} disabled={cart.length === 0} style={{ color: DestructiveColor }}>
+                                        <Trash2 size={16} /> Clear
+                                    </Button>
+                                </div>
+                            </CardHeader>
+                            <CardContent style={{ marginTop: '1rem' }}>
+                                <div style={{ overflowY: 'auto', maxHeight: '200px' }}>
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead style={{ width: '40%' }}>Item</TableHead>
+                                                <TableHead style={{ width: '30%', textAlign: 'center' }}>Qty</TableHead>
+                                                <TableHead style={{ width: '30%', textAlign: 'right' }}>Subtotal</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {cart.map((item, index) => (
+                                                <TableRow key={item.id}>
+                                                    <TableCell style={{ fontWeight: '500', fontSize: '0.9rem' }}>{item.name}</TableCell>
+                                                    <TableCell style={{ textAlign: 'center' }}>
+                                                        <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #ccc', borderRadius: '4px' }}>
+                                                            <Button variant="icon" onClick={() => updateCartQuantity(item.id, -1)} style={{ padding: '0.2rem' }}> <Minus size={14} /> </Button>
+                                                            <span style={{ padding: '0 0.5rem', minWidth: '20px', textAlign: 'center', fontSize: '0.9rem' }}>{item.quantity}</span>
+                                                            <Button variant="icon" onClick={() => updateCartQuantity(item.id, 1)} style={{ padding: '0.2rem' }}> <Plus size={14} /> </Button>
+                                                        </div>
+                                                    </TableCell>
+                                                    {/* ✅ FIX: Corrected item.price to item.unit_price (Error 3 fix) */}
+                                                    <TableCell style={{ textAlign: 'right' }}>{formatCurrency(item.unit_price * item.quantity)}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                    {cart.length === 0 && (
+                                        <p style={{ textAlign: 'center', color: MutedColor, padding: '1rem' }}>Cart is empty.</p>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                        
+                        {/* 4. Payment & Checkout Summary */}
+                        <Card>
+                            <CardTitle style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Transaction Summary</CardTitle>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                {/* Subtotal */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem' }}>
+                                    <span>Subtotal:</span>
+                                    <span>{formatCurrency(calculations.subtotal)}</span>
+                                </div>
+                                {/* Discount Input */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                    <span style={{ color: DestructiveColor }}>Discount:</span>
+                                    <Input
+                                        type="number"
+                                        value={discount > 0 ? discount : ''}
+                                        onChange={(e: ChangeEvent<HTMLInputElement>) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+                                        placeholder="0.00"
+                                        min="0"
+                                        step="1"
+                                        style={{ width: '120px', height: '30px', padding: '0.3rem' }}
+                                    />
+                                </div>
+                                
+                                {/* Grand Total */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 'bold', borderTop: '1px solid #eee', paddingTop: '0.5rem' }}>
+                                    <span>GRAND TOTAL:</span>
+                                    <span style={{ color: PrimaryColor }}>{formatCurrency(calculations.grandTotal)}</span>
+                                </div>
+
+                                {/* Amount Paid Input */}
+                                <div style={{ margin: '1rem 0', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '0.875rem', fontWeight: '500', color: MutedColor }}>Amount Paid:</label>
+                                    <Input
+                                        type="number"
+                                        value={amountPaid > 0 ? amountPaid : ''}
+                                        onChange={(e: ChangeEvent<HTMLInputElement>) => setAmountPaid(Math.max(0, parseFloat(e.target.value) || 0))}
+                                        placeholder={formatCurrency(calculations.grandTotal).replace('₦', '')}
+                                        min="0"
+                                        step="1"
+                                    />
+                                </div>
+                                
+                                {/* Balance/Excess */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: '500' }}>
+                                    <span style={{ color: calculations.balance > 0 ? DestructiveColor : MutedColor }}>
+                                        {calculations.balance > 0 ? 'Balance Owing:' : 'Excess Change:'}
+                                    </span>
+                                    <span style={{ color: calculations.balance > 0 ? DestructiveColor : calculations.excess > 0 ? SuccessColor : MutedColor }}>
+                                        {calculations.balance > 0 
+                                            ? formatCurrency(calculations.balance) 
+                                            : formatCurrency(calculations.excess)}
+                                    </span>
+                                </div>
+                                
+                                {/* Payment Method */}
+                                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '0.875rem', fontWeight: '500', color: MutedColor }}>Payment Method:</label>
+                                    <select
+                                        style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '0.6rem 0.8rem', width: '100%', height: 40, backgroundColor: 'white' }}
+                                        value={paymentMethod}
+                                        onChange={(e) => setPaymentMethod(e.target.value as SaleRecord["paymentMethod"])}
+                                    >
+                                        {PAYMENT_METHODS.map(method => (
+                                            <option key={method} value={method}>{method}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <Button 
+                                onClick={handleCheckout} 
+                                disabled={!canCheckout || isProcessing}
+                                variant={calculations.balance > 0 ? 'destructive' : 'default'}
+                                style={{ width: '100%', height: 50, marginTop: '1.5rem' }}
+                            >
+                                {isProcessing ? (
+                                    <><Loader2 size={20} style={{ marginRight: '0.5rem', animation: 'spin 1s linear infinite' }} /> Processing...</>
+                                ) : (
+                                    <><CreditCard size={20} style={{ marginRight: '0.5rem' }} /> Complete Sale ({calculations.balance > 0 ? 'Debt Sale' : 'Paid'})</>
+                                )}
+                            </Button>
+                        </Card>
+                    </div>
+                </div> 
+            </main>
+        </div>
+    );
+}
+
+export default SalesPage;

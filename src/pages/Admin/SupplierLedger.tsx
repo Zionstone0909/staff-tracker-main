@@ -1,309 +1,346 @@
-import React, { useState, ChangeEvent } from 'react';
-
-// --- Inline SVG Definitions for Icons (FIXED) ---
-
-const IconPlus = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M5 12h14" />
-    <path d="M12 5v14" />
-  </svg>
-);
-
-const IconEdit = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-    <path d="M15 5l4 4" />
-  </svg>
-);
-
-const IconTrash2 = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 6h18" />
-    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-    <line x1="10" x2="10" y1="11" y2="17" />
-    <line x1="14" x2="14" y1="11" y2="17" />
-  </svg>
-);
-
-const IconSearch = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8" />
-    <path d="m21 21-4.3-4.3" />
-  </svg>
-);
-
+import React, { useState, useEffect, ChangeEvent } from "react";
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  orderBy,
+  where,
+  getDocs,
+  Timestamp
+} from "firebase/firestore";
+import {
+  auth,
+  db,
+  SUPPLIER_LEDGER_COLLECTION_SEGMENTS,
+  SUPPLIERS_COLLECTION_SEGMENTS,
+  INVENTORY_COLLECTION_SEGMENTS,
+  getRole
+} from "../../firebase";
+import { 
+  Plus, 
+  Edit, 
+  Trash2, 
+  Search, 
+  CheckCircle, 
+  ArrowLeft, 
+  Download, 
+  Printer, 
+  Calendar,
+  Check
+} from "lucide-react";
 
 // --- Type Definitions ---
+interface Supplier {
+  id: string; // Firestore ID
+  name: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+}
+
 interface SupplierLedgerEntry {
   id: string;
   supplier_id: string;
-  goods_received: string; 
+  supplier_name: string;
+  goods_received: string;
   quantity: number;
+  unit_price: number;
   amount_owed: number;
   amount_paid: number;
-  transaction_date: string;
+  transaction_date: string; // ISO String YYYY-MM-DD
+  created_at?: Timestamp;
 }
 
 interface FormState {
   supplier_id: string;
+  supplier_name: string;
   goods_received: string;
-  quantity: number | '';
-  amount_owed: number | '';
-  amount_paid: number | '';
+  quantity: number | "";
+  unit_price: number | "";
+  amount_owed: number | "";
+  amount_paid: number | "";
   transaction_date: string;
 }
 
-// --- Stub Component Interfaces & Implementations ---
-
-interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode;
-  style?: React.CSSProperties; 
-}
-
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  children: React.ReactNode;
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; 
-  variant?: 'default' | 'primary' | 'destructive';
-  size?: 'sm' | 'md' | 'lg';
-  style?: React.CSSProperties; 
-}
-
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  value: string | number;
-  onChange: (e: ChangeEvent<HTMLInputElement>) => void;
-  placeholder: string;
-  style?: React.CSSProperties; 
-}
-
-
-// Simplified Card components using inline styles
-const Card = ({ children, style = {}, ...props }: CardProps) => (
-  <div
-    style={{
-      backgroundColor: 'white',
-      padding: '32px', 
-      borderRadius: '16px', 
-      boxShadow: '0 8px 16px -4px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)', 
-      border: '1px solid #e5e7eb', 
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </div>
-);
-const CardHeader = ({ children, style = {}, ...props }: CardProps) => (
-  <div
-    style={{
-      display: 'flex',
-      flexDirection: 'column',
-      marginBottom: '16px', 
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </div>
-);
-const CardTitle = ({ children, style = {}, ...props }: CardProps) => (
-  <h3
-    style={{
-      fontSize: '1.5rem', 
-      fontWeight: '700',
-      lineHeight: '1.2',
-      color: '#1f2937', 
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </h3>
-);
-const CardDescription = ({ children, style = {}, ...props }: CardProps) => (
-  <p
-    style={{
-      fontSize: '1rem', 
-      color: '#6b7280', 
-      marginTop: '4px',
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </p>
-);
-const CardContent = ({ children, style = {}, ...props }: CardProps) => (
-  <div
-    style={{
-      paddingTop: '8px', 
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
-const Button = ({ children, onClick, variant = 'default', size = 'md', style = {}, ...props }: ButtonProps) => {
-  const baseStyle: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '10px', 
-    fontWeight: '600',
-    transition: 'background-color 0.15s ease, transform 0.1s ease',
-    cursor: 'pointer',
-    outline: 'none',
-    boxShadow: '0 2px 4px 0 rgba(0,0,0,0.1)',
-    ...style
-  };
-
-  let variantStyle: React.CSSProperties;
-  if (variant === 'primary') {
-    variantStyle = {
-      backgroundColor: '#4f46e5', 
-      color: 'white',
-    };
-  } else if (variant === 'destructive') {
-    variantStyle = {
-      backgroundColor: '#dc2626', 
-      color: 'white',
-    };
-  } else { // default
-    variantStyle = {
-      backgroundColor: 'white', 
-      color: '#1f2937', 
-      border: '1px solid #d1d5db', 
-    };
-  }
-
-  let sizeStyle: React.CSSProperties;
-  if (size === 'sm') {
-    sizeStyle = { height: '36px', padding: '0 14px', fontSize: '0.875rem' };
-  } else if (size === 'lg') {
-    sizeStyle = { height: '52px', padding: '0 36px', fontSize: '1.125rem' };
-  } else { // 'md'
-    sizeStyle = { height: '44px', padding: '0 20px', fontSize: '1rem' }; 
-  }
-
-  return (
-    <button
-      style={{ ...baseStyle, ...variantStyle, ...sizeStyle }}
-      onClick={onClick}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-};
-
-const Input = ({ type = 'text', value, onChange, placeholder, style = {}, ...props }: InputProps) => {
-  const inputBaseStyle: React.CSSProperties = {
-    display: 'flex',
-    height: '44px', 
-    width: '100%',
-    borderRadius: '10px',
-    border: '1px solid #d1d5db', 
-    backgroundColor: 'white',
-    padding: '10px 14px', 
-    fontSize: '1rem', 
-    color: '#1f2937', 
-    outline: 'none',
-    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.03)', 
-    transition: 'border-color 0.15s ease-in-out',
-    ...style
-  };
-
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      style={inputBaseStyle}
-      {...props}
-    />
-  );
-};
-
-
-// --- Main Component Data & Logic (Unchanged) ---
-
 const initialFormState: FormState = {
-  supplier_id: '',
-  goods_received: '',
-  quantity: '',
-  amount_owed: '',
-  amount_paid: '',
+  supplier_id: "",
+  supplier_name: "",
+  goods_received: "",
+  quantity: "",
+  unit_price: "",
+  amount_owed: "",
+  amount_paid: "",
   transaction_date: new Date().toISOString().substring(0, 10),
 };
 
-const DUMMY_DATA: SupplierLedgerEntry[] = [
-  { id: '1', supplier_id: 'SUP001', goods_received: 'Raw Steel', quantity: 100, amount_owed: 5000, amount_paid: 2000, transaction_date: '2024-10-15' },
-  { id: '2', supplier_id: 'SUP002', goods_received: 'Plastic Pellets', quantity: 500, amount_owed: 1500, amount_paid: 1500, transaction_date: '2024-11-01' },
-];
-
 const SupplierLedger: React.FC = () => {
-  const [entries, setEntries] = useState<SupplierLedgerEntry[]>(DUMMY_DATA);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [entries, setEntries] = useState<SupplierLedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [formState, setFormState] = useState<FormState>(initialFormState);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  
+  // Filters
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  
+  const [successMessage, setSuccessMessage] = useState<string>("");
+  const [error, setError] = useState<string>("");
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+  // Auth Check
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      const role = getRole(user);
+      if (role !== "admin") {
+        // Redirect logic - normally you'd use react-router navigate here
+        // For now, we'll show a basic alert or assume parent handles routing
+        // window.location.href = "/login"; 
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch Suppliers
+  useEffect(() => {
+    const q = query(collection(db, ...SUPPLIERS_COLLECTION_SEGMENTS), orderBy("name"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedSuppliers = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Supplier[];
+      setSuppliers(fetchedSuppliers);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch Ledger Entries
+  useEffect(() => {
+    const q = query(
+      collection(db, ...SUPPLIER_LEDGER_COLLECTION_SEGMENTS),
+      orderBy("transaction_date", "desc")
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedEntries = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as SupplierLedgerEntry[];
+      setEntries(fetchedEntries);
+      setLoading(false);
+    }, (err) => {
+      console.error("Error fetching ledger:", err);
+      setError("Failed to load ledger data.");
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Auto-hide messages
+  useEffect(() => {
+    if (successMessage || error) {
+      const timer = setTimeout(() => {
+        setSuccessMessage("");
+        setError("");
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage, error]);
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    setFormState(prev => ({
-      ...prev,
-      [name]: type === 'number' ? parseFloat(value) || '' : value,
-    }));
+
+    if (name === "supplier_id") {
+      const selectedSupplier = suppliers.find((s) => s.id === value);
+      setFormState((prev) => ({
+        ...prev,
+        supplier_id: value,
+        supplier_name: selectedSupplier ? selectedSupplier.name : "",
+      }));
+    } else if (name === "quantity" || name === "unit_price") {
+      setFormState((prev) => {
+        const updatedForm = {
+          ...prev,
+          [name]: parseFloat(value) || "",
+        };
+        // Auto-calculate amount_owed
+        if (updatedForm.quantity !== "" && updatedForm.unit_price !== "") {
+          updatedForm.amount_owed =
+            Number(updatedForm.quantity) * Number(updatedForm.unit_price);
+        }
+        return updatedForm;
+      });
+    } else {
+      setFormState((prev) => ({
+        ...prev,
+        [name]: type === "number" ? parseFloat(value) || "" : value,
+      }));
+    }
+  };
+
+  // Inventory Integration
+  const updateInventory = async (
+    goodsName: string,
+    quantity: number,
+    unitPrice: number,
+    supplierId: string,
+    supplierName: string
+  ) => {
+    try {
+      const inventoryRef = collection(db, ...INVENTORY_COLLECTION_SEGMENTS);
+      // Simple check by name (case insensitive ideally, but strict here for Firestore)
+      const q = query(inventoryRef, where("name", "==", goodsName));
+      const querySnapshot = await getDocs(q);
+
+      const now = new Date().toISOString();
+
+      if (!querySnapshot.empty) {
+        // Update existing item
+        const itemDoc = querySnapshot.docs[0];
+        const itemData = itemDoc.data();
+        const newQuantity = (itemData.units_available || 0) + quantity;
+        
+        // Append supplier if not present
+        const currentSuppliers = itemData.suppliers || [];
+        const supplierExists = currentSuppliers.some((s: any) => s.id === supplierId);
+        const updatedSuppliers = supplierExists 
+            ? currentSuppliers 
+            : [...currentSuppliers, { id: supplierId, name: supplierName }];
+
+        await updateDoc(doc(db, ...INVENTORY_COLLECTION_SEGMENTS, itemDoc.id), {
+          units_available: newQuantity,
+          total_value: unitPrice * newQuantity,
+          last_updated: now,
+          suppliers: updatedSuppliers
+        });
+      } else {
+        // Create new item
+        await addDoc(inventoryRef, {
+          name: goodsName,
+          sku: `SKU-${Date.now().toString().slice(-6)}`,
+          category: "General",
+          unit_price: unitPrice,
+          units_available: quantity,
+          total_value: unitPrice * quantity,
+          suppliers: [{ id: supplierId, name: supplierName }],
+          description: "Added from Supplier Ledger",
+          date_added: now,
+          last_updated: now,
+          low_stock_threshold: 5,
+        });
+      }
+    } catch (err) {
+      console.error("Error updating inventory:", err);
+      // We don't block the UI flow for this, but log it
+    }
   };
 
   const handleAddOrUpdateEntry = async () => {
-    if (!formState.supplier_id || !formState.goods_received || formState.quantity === '' || formState.amount_owed === '') {
-      console.error("Please fill in all required fields.");
+    if (
+      !formState.supplier_id ||
+      !formState.goods_received ||
+      formState.quantity === "" ||
+      formState.unit_price === ""
+    ) {
+      setError("Please fill in Supplier, Goods Received, Quantity, and Unit Price.");
       return;
     }
 
-    const newEntry: SupplierLedgerEntry = {
-      id: currentEntryId || String(Date.now()),
-      supplier_id: formState.supplier_id,
-      goods_received: formState.goods_received,
-      quantity: Number(formState.quantity),
-      amount_owed: Number(formState.amount_owed),
-      amount_paid: Number(formState.amount_paid) || 0,
-      transaction_date: formState.transaction_date,
-    };
+    setLoading(true);
+    try {
+      const entryData = {
+        supplier_id: formState.supplier_id,
+        supplier_name: formState.supplier_name,
+        goods_received: formState.goods_received,
+        quantity: Number(formState.quantity),
+        unit_price: Number(formState.unit_price),
+        amount_owed:
+          Number(formState.amount_owed) ||
+          Number(formState.quantity) * Number(formState.unit_price),
+        amount_paid: Number(formState.amount_paid) || 0,
+        transaction_date: formState.transaction_date,
+        updated_at: Timestamp.now(),
+      };
 
-    if (isEditing && currentEntryId) {
-      setEntries(entries.map(e => e.id === currentEntryId ? newEntry : e));
-      console.log('Entry updated:', newEntry);
-    } else {
-      setEntries([...entries, newEntry]);
-      console.log('New entry added:', newEntry);
+      if (isEditing && currentEntryId) {
+        await updateDoc(
+          doc(db, ...SUPPLIER_LEDGER_COLLECTION_SEGMENTS, currentEntryId),
+          entryData
+        );
+        setSuccessMessage("Entry updated successfully.");
+      } else {
+        await addDoc(
+          collection(db, ...SUPPLIER_LEDGER_COLLECTION_SEGMENTS),
+          { ...entryData, created_at: Timestamp.now() }
+        );
+        
+        // Only update inventory on NEW entries to avoid double counting edits
+        await updateInventory(
+          formState.goods_received,
+          Number(formState.quantity),
+          Number(formState.unit_price),
+          formState.supplier_id,
+          formState.supplier_name
+        );
+        
+        setSuccessMessage("Ledger entry added and inventory updated.");
+      }
+
+      setFormState(initialFormState);
+      setIsEditing(false);
+      setCurrentEntryId(null);
+    } catch (err) {
+      console.error(err);
+      setError("Operation failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    setFormState(initialFormState);
-    setIsEditing(false);
-    setCurrentEntryId(null);
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this entry?")) return;
+    try {
+      await deleteDoc(doc(db, ...SUPPLIER_LEDGER_COLLECTION_SEGMENTS, id));
+      setSuccessMessage("Entry deleted successfully.");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to delete entry.");
+    }
+  };
+
+  const handleMarkAsPaid = async (entry: SupplierLedgerEntry) => {
+    if (!window.confirm("Are you sure you want to mark this transaction as fully paid? This will update the 'Amount Paid' to match the total amount owed.")) return;
+    try {
+      await updateDoc(doc(db, ...SUPPLIER_LEDGER_COLLECTION_SEGMENTS, entry.id), {
+        amount_paid: entry.amount_owed,
+        updated_at: Timestamp.now(),
+      });
+      setSuccessMessage("Transaction marked as fully paid.");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to update payment status.");
+    }
   };
 
   const handleEdit = (entry: SupplierLedgerEntry) => {
     setFormState({
       supplier_id: entry.supplier_id,
+      supplier_name: entry.supplier_name,
       goods_received: entry.goods_received,
       quantity: entry.quantity,
+      unit_price: entry.unit_price,
       amount_owed: entry.amount_owed,
       amount_paid: entry.amount_paid,
       transaction_date: entry.transaction_date,
     });
     setCurrentEntryId(entry.id);
     setIsEditing(true);
-  };
-
-  const handleDelete = (id: string) => {
-    setEntries(entries.filter(e => e.id !== id));
-    console.log(`Entry ${id} deleted.`);
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleClearForm = () => {
@@ -312,335 +349,387 @@ const SupplierLedger: React.FC = () => {
     setCurrentEntryId(null);
   };
 
-  const filteredEntries = entries.filter(entry =>
-    entry.supplier_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.goods_received.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter Logic
+  const filteredEntries = entries.filter((entry) => {
+    const matchesSearch =
+      entry.supplier_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      entry.goods_received.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    let matchesDate = true;
+    if (dateFrom) matchesDate = matchesDate && entry.transaction_date >= dateFrom;
+    if (dateTo) matchesDate = matchesDate && entry.transaction_date <= dateTo;
 
-  const calculateTotals = () => {
-    return entries.reduce(
-      (acc, entry) => {
-        acc.totalOwed += entry.amount_owed;
-        acc.totalPaid += entry.amount_paid;
-        return acc;
-      },
-      { totalOwed: 0, totalPaid: 0 }
-    );
-  };
+    return matchesSearch && matchesDate;
+  });
 
-  const { totalOwed, totalPaid } = calculateTotals();
+  // Calculate Totals
+  const totalOwed = filteredEntries.reduce((sum, e) => sum + (e.amount_owed || 0), 0);
+  const totalPaid = filteredEntries.reduce((sum, e) => sum + (e.amount_paid || 0), 0);
   const balance = totalOwed - totalPaid;
 
-  // --- Layout with Fixed Alignment ---
-
-  // Custom function to determine text alignment for table columns
-  const getHeaderAlignment = (index: number) => {
-    // 0: Date (Left), 1: Supplier ID (Left), 2: Goods (Left)
-    if (index < 3) return 'left';
-    // 3: Quantity, 4: Owed ($), 5: Paid ($), 6: Balance ($)
-    if (index < 7) return 'right';
-    // 7: Actions (Centered for visual balance with icon buttons)
-    return 'center';
+  // Export to CSV
+  const handleExport = () => {
+    const headers = ["Date,Supplier,Goods,Quantity,Unit Price,Owed,Paid,Balance"];
+    const rows = filteredEntries.map(e => 
+      `${e.transaction_date},"${e.supplier_name}","${e.goods_received}",${e.quantity},${e.unit_price},${e.amount_owed},${e.amount_paid},${e.amount_owed - e.amount_paid}`
+    );
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `supplier_ledger_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
-  
-  const getCellAlignment = (index: number) => {
-    // 0: Date (Left), 1: Supplier ID (Left), 2: Goods (Left)
-    if (index < 3) return 'left';
-    // 3: Quantity, 4: Owed ($), 5: Paid ($), 6: Balance ($)
-    if (index < 7) return 'right';
-    // 7: Actions 
-    return 'initial';
-  };
-
 
   return (
-    <div
-      style={{
-        backgroundColor: '#f9fafb', 
-        minHeight: '100vh',
-        fontFamily: 'Inter, sans-serif',
-      }}
-    >
-      {/* Centered Content Container */}
-      <div
-        style={{
-          maxWidth: '1200px', 
-          margin: '0 auto', 
-          padding: '40px 24px', 
-        }}
-      >
-        <h1
-          style={{
-            fontSize: '2.5rem', 
-            fontWeight: '800', 
-            marginBottom: '40px', 
-            color: '#111827', 
-          }}
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+      {/* Top Navigation */}
+      <nav className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+        <button
+          onClick={() => window.history.back()}
+          className="flex items-center text-blue-900 font-medium hover:text-blue-700 transition-colors"
         >
-          Supplier Ledger Dashboard
-        </h1>
-
-        {/* Summary Cards */}
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '30px', 
-            marginBottom: '50px', 
-            justifyContent: 'space-between',
-          }}
+          <ArrowLeft className="w-5 h-5 mr-2" /> Back
+        </button>
+        <div className="text-xl font-bold text-gray-800 hidden md:block">
+          Staff Tracker Admin
+        </div>
+        <button
+          onClick={() => auth.signOut()}
+          className="text-red-600 font-medium hover:bg-red-50 px-4 py-2 rounded transition-colors"
         >
-          {/* Card 1: Total Amount Owed */}
-          <Card
-            style={{
-              flex: '1 1 300px', 
-              minWidth: '280px', 
-              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-            }}
-          >
-            <CardHeader>
-              <CardTitle>Total Amount Owed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p
-                style={{
-                  fontSize: '2.25rem', 
-                  fontWeight: '700', 
-                  marginTop: '12px', 
-                  color: '#ef4444', 
-                }}
-              >
-                ${totalOwed.toFixed(2)}
-              </p>
-            </CardContent>
-          </Card>
+          Logout
+        </button>
+      </nav>
 
-          {/* Card 2: Total Amount Paid */}
-          <Card
-            style={{
-              flex: '1 1 300px', 
-              minWidth: '280px',
-              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-            }}
-          >
-            <CardHeader>
-              <CardTitle>Total Amount Paid</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p
-                style={{
-                  fontSize: '2.25rem',
-                  fontWeight: '700',
-                  marginTop: '12px',
-                  color: '#10b981', 
-                }}
-              >
-                ${totalPaid.toFixed(2)}
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Card 3: Net Balance */}
-          <Card
-            style={{
-              flex: '1 1 300px', 
-              minWidth: '280px',
-              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-            }}
-          >
-            <CardHeader>
-              <CardTitle>Net Balance</CardTitle>
-              <CardDescription>Owed - Paid</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p
-                style={{
-                  fontSize: '2.25rem',
-                  fontWeight: '700',
-                  marginTop: '12px',
-                  color: balance > 0 ? '#ef4444' : '#4f46e5',
-                }}
-              >
-                ${balance.toFixed(2)}
-              </p>
-            </CardContent>
-          </Card>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <h1 className="text-3xl font-extrabold text-gray-900">
+            Supplier Ledger
+          </h1>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => window.print()}
+              className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Printer className="w-4 h-4 mr-2" /> Print
+            </button>
+            <button 
+              onClick={handleExport}
+              className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Download className="w-4 h-4 mr-2" /> Export CSV
+            </button>
+          </div>
         </div>
 
-        {/* Entry Form */}
-        <Card
-          style={{
-            marginBottom: '50px', 
-            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', 
-          }}
-        >
-          <CardHeader>
-            <CardTitle>{isEditing ? 'Edit Ledger Entry' : 'Add New Ledger Entry'}</CardTitle>
-            <CardDescription>
-              {isEditing ? 'Modify the details of the selected transaction.' : 'Enter details for a new goods received/payment transaction.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* Form Inputs - Clean 2-column grid */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-                gap: '30px', 
-              }}
-            >
-              {[
-                { id: 'supplier_id', label: 'Supplier ID', name: 'supplier_id', placeholder: 'SUP-XXX (Required)', type: 'text', value: formState.supplier_id },
-                { id: 'goods_received', label: 'Goods Received', name: 'goods_received', placeholder: 'E.g., Steel, Plastic (Required)', type: 'text', value: formState.goods_received },
-                { id: 'quantity', label: 'Quantity', name: 'quantity', placeholder: '0 (Required)', type: 'number', value: formState.quantity },
-                { id: 'amount_owed', label: 'Amount Owed ($)', name: 'amount_owed', placeholder: '0.00 (Required)', type: 'number', value: formState.amount_owed },
-                { id: 'amount_paid', label: 'Amount Paid ($)', name: 'amount_paid', placeholder: '0.00', type: 'number', value: formState.amount_paid },
-                { id: 'transaction_date', label: 'Date', name: 'transaction_date', placeholder: '', type: 'date', value: formState.transaction_date },
-              ].map(field => (
-                <div key={field.id} style={{ marginBottom: '0' }}>
-                  <label htmlFor={field.id} style={{ fontSize: '0.9rem', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '10px' }}> 
-                    {field.label}
-                  </label>
-                  <Input
-                    id={field.id}
-                    name={field.name}
-                    type={field.type}
-                    placeholder={field.placeholder}
-                    value={field.value}
+        {/* Alerts */}
+        {successMessage && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 animate-fade-in">
+            <CheckCircle className="w-5 h-5 text-green-600" />
+            <span className="text-green-800 font-medium">{successMessage}</span>
+          </div>
+        )}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 animate-fade-in">
+            <span className="text-red-800 font-medium">⚠️ {error}</span>
+          </div>
+        )}
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Total Owed</h3>
+            <p className="text-3xl font-bold text-red-600 mt-2">${totalOwed.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Total Paid</h3>
+            <p className="text-3xl font-bold text-emerald-600 mt-2">${totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Net Balance</h3>
+            <p className={`text-3xl font-bold mt-2 ${balance > 0 ? 'text-red-600' : 'text-blue-600'}`}>
+              ${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </p>
+            <span className="text-xs text-gray-400">Positive = Outstanding Debt</span>
+          </div>
+        </div>
+
+        {/* Input Form */}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 mb-10 overflow-hidden">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-gray-800">
+              {isEditing ? "Edit Transaction" : "New Transaction"}
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {isEditing ? "Modify selected entry" : "Record goods received or payments"}
+            </p>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="col-span-1 md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Supplier *</label>
+                <select
+                  name="supplier_id"
+                  value={formState.supplier_id}
+                  onChange={handleChange}
+                  className="w-full h-11 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                >
+                  <option value="">Select Supplier</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-span-1 md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Goods / Description *</label>
+                <input
+                  type="text"
+                  name="goods_received"
+                  placeholder="e.g. Steel Rods"
+                  value={formState.goods_received}
+                  onChange={handleChange}
+                  className="w-full h-11 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Quantity *</label>
+                <input
+                  type="number"
+                  name="quantity"
+                  placeholder="0"
+                  value={formState.quantity}
+                  onChange={handleChange}
+                  className="w-full h-11 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Unit Price ($) *</label>
+                <input
+                  type="number"
+                  name="unit_price"
+                  placeholder="0.00"
+                  step="0.01"
+                  value={formState.unit_price}
+                  onChange={handleChange}
+                  className="w-full h-11 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Total Owed ($)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    name="amount_owed"
+                    value={formState.amount_owed}
                     onChange={handleChange}
+                    readOnly={formState.quantity !== "" && formState.unit_price !== ""}
+                    className={`w-full h-11 px-3 rounded-lg border border-gray-300 outline-none ${
+                      formState.quantity !== "" && formState.unit_price !== "" 
+                      ? "bg-gray-100 text-gray-500 cursor-not-allowed" 
+                      : "focus:ring-2 focus:ring-blue-500"
+                    }`}
                   />
+                  {(formState.quantity !== "" && formState.unit_price !== "") && (
+                    <span className="absolute right-3 top-3 text-xs text-gray-400">Auto</span>
+                  )}
                 </div>
-              ))}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Amount Paid ($)</label>
+                <input
+                  type="number"
+                  name="amount_paid"
+                  placeholder="0.00"
+                  step="0.01"
+                  value={formState.amount_paid}
+                  onChange={handleChange}
+                  className="w-full h-11 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Date</label>
+                <input
+                  type="date"
+                  name="transaction_date"
+                  value={formState.transaction_date}
+                  onChange={handleChange}
+                  className="w-full h-11 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
             </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '20px', 
-                marginTop: '40px', 
-              }}
-            >
-              <Button variant="default" size="md" onClick={handleClearForm} disabled={!isEditing && !currentEntryId}>
+
+            <div className="flex justify-end gap-4 mt-8 pt-6 border-t border-gray-100">
+              <button
+                onClick={handleClearForm}
+                className="px-6 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+              >
                 Clear
-              </Button>
-              <Button variant="primary" size="md" onClick={() => handleAddOrUpdateEntry()}>
-                <IconPlus style={{ width: '16px', height: '16px', marginRight: '8px' }} /> {/* Icon Plus */}
-                {isEditing ? 'Update Entry' : 'Add Entry'}
-              </Button>
+              </button>
+              <button
+                onClick={handleAddOrUpdateEntry}
+                disabled={loading}
+                className="flex items-center px-6 py-2 bg-blue-900 text-white font-medium rounded-lg hover:bg-blue-800 transition-colors shadow-md disabled:opacity-50"
+              >
+                {loading ? "Processing..." : (
+                  <>
+                    <Plus className="w-5 h-5 mr-2" />
+                    {isEditing ? "Update Entry" : "Add Entry"}
+                  </>
+                )}
+              </button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
+        {/* Ledger Table Section */}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h2 className="text-xl font-bold text-gray-800">Ledger History</h2>
+            
+            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+               {/* Date Filters */}
+               <div className="flex items-center gap-2 bg-gray-50 px-3 rounded-lg border border-gray-200">
+                 <Calendar className="w-4 h-4 text-gray-400" />
+                 <input 
+                   type="date" 
+                   value={dateFrom} 
+                   onChange={(e) => setDateFrom(e.target.value)} 
+                   className="bg-transparent border-none text-sm py-2 focus:ring-0 w-32"
+                 />
+                 <span className="text-gray-400">-</span>
+                 <input 
+                   type="date" 
+                   value={dateTo} 
+                   onChange={(e) => setDateTo(e.target.value)} 
+                   className="bg-transparent border-none text-sm py-2 focus:ring-0 w-32"
+                 />
+               </div>
 
-        {/* Ledger Table */}
-        <Card style={{ boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-          <CardHeader
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '16px 0',
-              borderBottom: '1px solid #e5e7eb',
-              marginBottom: '0',
-            }}
-          >
-            <CardTitle style={{ marginBottom: 0 }}>Transaction History</CardTitle>
-            <div style={{ position: 'relative', width: '300px' }}>
-              <IconSearch
-                style={{
-                  position: 'absolute',
-                  left: '14px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  height: '18px',
-                  width: '18px',
-                  color: '#9ca3af', 
-                }}
-              /> {/* Icon Search */}
-              <Input
-                placeholder="Search by ID or Goods"
-                value={searchTerm}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-                style={{ paddingLeft: '45px', width: '300px' }} 
-              />
+               {/* Search */}
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search Supplier or Goods..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                />
+              </div>
             </div>
-          </CardHeader>
-          <CardContent style={{ padding: '0', paddingTop: '16px' }}>
-            <div
-              style={{
-                overflowX: 'auto',
-                borderRadius: '8px',
-                border: '1px solid #e5e7eb',
-              }}
-            >
-              <table style={{ minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                <thead style={{ backgroundColor: '#f3f4f6' }}>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Goods</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Qty</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Unit ($)</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Owed</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Paid</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Balance</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
                   <tr>
-                    {['Date', 'Supplier ID', 'Goods', 'Quantity', 'Owed ($)', 'Paid ($)', 'Balance ($)', 'Actions'].map((header, index) => (
-                      <th
-                        key={header}
-                        style={{
-                          padding: '16px 24px', 
-                          // FIX: Set alignment based on content type
-                          textAlign: getHeaderAlignment(index),
-                          fontSize: '0.8rem', 
-                          fontWeight: '600',
-                          color: '#4b5563', 
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {header}
-                      </th>
-                    ))}
+                    <td colSpan={9} className="px-6 py-8 text-center text-gray-500">Loading ledger data...</td>
                   </tr>
-                </thead>
-                <tbody style={{ backgroundColor: 'white' }}>
-                  {filteredEntries.length > 0 ? (
-                    filteredEntries.map((entry, index) => (
-                      <tr key={entry.id} style={{ borderBottom: index < filteredEntries.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', fontWeight: '500', color: '#111827', textAlign: getCellAlignment(0) }}>{entry.transaction_date}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', color: '#6b7280', textAlign: getCellAlignment(1) }}>{entry.supplier_id}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', color: '#6b7280', textAlign: getCellAlignment(2) }}>{entry.goods_received}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', textAlign: getCellAlignment(3), color: '#6b7280' }}>{entry.quantity}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', textAlign: getCellAlignment(4), fontWeight: '600', color: '#ef4444' }}>${entry.amount_owed.toFixed(2)}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', textAlign: getCellAlignment(5), fontWeight: '600', color: '#10b981' }}>${entry.amount_paid.toFixed(2)}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', textAlign: getCellAlignment(6), fontWeight: '700', color: '#4f46e5' }}>${(entry.amount_owed - entry.amount_paid).toFixed(2)}</td>
-                        {/* Action Buttons with Centering */}
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}>
-                          <Button
-                            variant="default"
-                            size="sm"
-                            style={{ width: '36px', height: '36px', padding: 0, backgroundColor: 'white', color: '#4f46e5', border: '1px solid #c7d2fe' }}
-                            onClick={() => handleEdit(entry)}
-                          >
-                            <IconEdit style={{ width: '18px', height: '18px' }} /> {/* Icon Edit */}
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            style={{ width: '36px', height: '36px', padding: 0, border: '1px solid #fecaca' }}
-                            onClick={() => handleDelete(entry.id)}
-                          >
-                            <IconTrash2 style={{ width: '18px', height: '18px' }} /> {/* Icon Trash */}
-                          </Button>
+                ) : filteredEntries.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-8 text-center text-gray-500">No entries found matching your criteria.</td>
+                  </tr>
+                ) : (
+                  filteredEntries.map((entry) => {
+                    const entryBalance = entry.amount_owed - entry.amount_paid;
+                    return (
+                      <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
+                          {entry.transaction_date}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-semibold text-gray-900">{entry.supplier_name}</div>
+                          <div className="text-xs text-gray-400 hidden lg:block">{entry.supplier_id.substring(0,8)}...</div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate" title={entry.goods_received}>
+                          {entry.goods_received}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 text-right">{entry.quantity}</td>
+                        <td className="px-6 py-4 text-sm text-blue-900 font-medium text-right">
+                          ${entry.unit_price.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-red-600 font-semibold text-right">
+                          ${entry.amount_owed.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-emerald-600 font-semibold text-right">
+                          ${entry.amount_paid.toFixed(2)}
+                        </td>
+                        <td className={`px-6 py-4 text-sm font-bold text-right ${entryBalance > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                          ${entryBalance.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex justify-center gap-2">
+                            {entryBalance > 0 && (
+                              <button
+                                onClick={() => handleMarkAsPaid(entry)}
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded border border-emerald-200 hover:border-emerald-300 transition-colors"
+                                title="Mark as Fully Paid"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleEdit(entry)}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded border border-blue-200 hover:border-blue-300 transition-colors"
+                              title="Edit"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(entry.id)}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded border border-red-200 hover:border-red-300 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={8} style={{ padding: '32px 24px', textAlign: 'center', color: '#6b7280' }}>
-                        No ledger entries found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 text-sm text-gray-500">
+            Showing {filteredEntries.length} entries
+          </div>
+        </div>
       </div>
+      
+      {/* CSS for print media to hide nav and buttons */}
+      <style>{`
+        @media print {
+          nav, button, .no-print { display: none !important; }
+          body { background: white; }
+          .shadow-lg, .shadow-sm { box-shadow: none !important; }
+          input, select { border: none !important; appearance: none; }
+        }
+      `}</style>
     </div>
   );
 };
