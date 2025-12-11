@@ -1,34 +1,34 @@
-// src/pages/Admin/Sales.tsx
-"use client"
-import React, { useState, useEffect, useMemo, PropsWithChildren, CSSProperties, useCallback, ChangeEvent } from 'react';
-import { app, auth, db, APP_ID, onAuthStateChanged } from '../../firebase'; // Assuming firebase.ts exports these
-import {
-    collection, query, onSnapshot, doc, runTransaction,
-    Timestamp, orderBy, limit, DocumentData, DocumentReference, serverTimestamp, increment, FieldValue, where
+import React, { useState, useEffect, useMemo, PropsWithChildren, CSSProperties } from 'react';
+import { db } from '../../firebase';
+import { 
+    collection, query, orderBy, onSnapshot, doc, runTransaction, 
+    serverTimestamp, increment, Timestamp, limit
 } from 'firebase/firestore';
-import { User, signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import {
-    ShoppingCart, Plus, Minus, Trash2, User as UserIcon, CreditCard,
-    Loader2, AlertTriangle, Search, ChevronDown, ChevronUp, DollarSign, X
+  ShoppingCart, Plus, Minus, Trash2, User as UserIcon, CreditCard,
+  Loader2, AlertTriangle, Search, History, CheckCircle, Printer, Download, Settings, LogOut, X
 } from 'lucide-react';
+import pdfMake from 'pdfmake/build/pdfmake';
+import * as pdfFonts from 'pdfmake/build/vfs_fonts';
+import { InventoryItem, Customer, SaleRecord, CartItem, PaymentMethod } from '../../types/types';
+import { useAuth } from '../../contexts/AuthContext';
 
-/* ========================================================================== */
-/* CONFIG & UI STYLES (INLINE CSS TEMPLATE)                                   */
-/* ========================================================================== */
+if (pdfFonts && (pdfFonts as any).pdfMake && (pdfFonts as any).pdfMake.vfs) {
+  pdfMake.vfs = (pdfFonts as any).pdfMake.vfs;
+}
 
-// --- Inline CSS Style Definitions (Consistent with CompanyExpenses.tsx) ---
+// --- STYLING CONSTANTS ---
 const PrimaryColor = '#0B3D91';
 const DestructiveColor = '#dc2626';
-const SuccessColor = '#15803d';
 const MutedColor = '#6b7280';
 const LightBg = '#f3f4f6';
 const OutlineBorderColor = '#e5e7eb';
-const WarningColor = '#d97706';
+// FIX: Use two-step cast to convert the array of strings to PaymentMethod[] (TS 2352)
+const PAYMENT_METHODS: PaymentMethod[] = ["Cash", "Transfer", "POS", "Others"] as unknown as PaymentMethod[];
 
-// --- Placeholder UI Components (using inline styles) ---
-
-const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'ghost' | 'destructive' | 'icon' | 'success' }> = ({ children, onClick, style, disabled, type = 'button', variant = 'default', ...props }) => { 
+// --- UI COMPONENTS ---
+const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'ghost' | 'destructive' | 'icon' | 'primary-muted' }> = ({ children, onClick, style, disabled, type = 'button', variant = 'default', ...props }) => {
     let backgroundColor = PrimaryColor;
     let color = 'white';
     let border = '1px solid transparent';
@@ -37,16 +37,18 @@ const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButton
     if (variant === 'ghost') {
         backgroundColor = 'transparent';
         color = PrimaryColor;
-        border = '1px solid transparent';
+        border = 'none';
     } else if (variant === 'destructive') {
         backgroundColor = DestructiveColor;
-    } else if (variant === 'success') {
-        backgroundColor = SuccessColor;
     } else if (variant === 'icon') {
         backgroundColor = 'transparent';
         color = MutedColor;
         padding = '0.2rem';
         border = 'none';
+    } else if (variant === 'primary-muted') {
+         backgroundColor = '#e0e7ff'; 
+         color = PrimaryColor;
+         padding = '0.25rem 0.5rem';
     }
 
     const baseStyle: CSSProperties = {
@@ -62,17 +64,12 @@ const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButton
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: '0.5rem',
         whiteSpace: 'nowrap',
         ...style
     };
     return (
-        <button
-            onClick={onClick}
-            style={baseStyle}
-            disabled={disabled}
-            type={type}
-            {...props}
-        >
+        <button onClick={onClick} style={baseStyle} disabled={disabled} type={type} {...props}>
             {children}
         </button>
     );
@@ -80,706 +77,608 @@ const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButton
 
 const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
     <input 
-        {...props} 
-        style={{ 
-            padding: '0.6rem 0.8rem', 
-            border: '1px solid #ccc', 
-            borderRadius: '4px', 
-            width: '100%', 
-            boxSizing: 'border-box', 
-            height: 40, 
-            ...props.style
-        }} 
+      {...props} 
+      style={{ 
+        padding: '0.6rem 0.8rem', 
+        border: '1px solid #ccc', 
+        borderRadius: '4px', 
+        width: props.type === 'number' && !(props.style as any)?.width ? '100px' : '100%', 
+        boxSizing: 'border-box', 
+        height: 40,
+        ...props.style 
+      }} 
     />
 );
 
 const Card: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <div style={{ border: '1px solid ' + OutlineBorderColor, borderRadius: '8px', padding: '1.5rem', marginBottom: '1.5rem', backgroundColor: '#fff', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', ...style }}>{children}</div>;
-const CardHeader: React.FC<PropsWithChildren> = ({ children }) => <div>{children}</div>;
 const CardTitle: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem', ...style }}>{children}</h2>;
-const CardContent: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <div style={{ paddingTop: '0.5rem', ...style }}>{children}</div>;
-
-const Alert: React.FC<PropsWithChildren & { variant?: 'default' | 'destructive' | 'warning', customStyle?: CSSProperties }> = ({ children, variant, customStyle }) => {
-    let bgColor = '#d4edda';
-    let borderColor = '#c3e6cb';
-    let textColor = '#155724';
-    if (variant === 'destructive') {
-        bgColor = '#f8d7da';
-        borderColor = '#f5c6cb';
-        textColor = '#721c24';
-    } else if (variant === 'warning') {
-        bgColor = '#fff3cd';
-        borderColor = '#ffeeba';
-        textColor = '#856404';
-    }
-    return (
-        <div style={{
-            padding: '1rem',
-            backgroundColor: bgColor,
-            border: `1px solid ${borderColor}`,
-            color: textColor,
-            borderRadius: '4px',
-            marginBottom: '1rem',
-            ...customStyle
-        }}>
-            {children}
-        </div>
-    );
-};
-const AlertDescription: React.FC<PropsWithChildren> = ({ children }) => <p style={{ margin: 0 }}>{children}</p>;
 
 const Table: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, ...style }}>{children}</table>;
 const TableHeader: React.FC<PropsWithChildren> = ({ children }) => <thead>{children}</thead>;
 const TableBody: React.FC<PropsWithChildren> = ({ children }) => <tbody>{children}</tbody>;
 const TableRow: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <tr style={{ borderBottom: '1px solid #eee', ...style }}>{children}</tr>;
-const TableHead: React.FC<PropsWithChildren & { style?: CSSProperties, onClick?: () => void, isSortable?: boolean }> = ({ children, style, onClick, isSortable = false }) => (
-    <th
-        onClick={onClick}
-        style={{
-            padding: '0.75rem',
-            textAlign: 'left',
-            fontWeight: '600',
-            borderBottom: '2px solid #ccc',
-            backgroundColor: '#f9fafb',
-            cursor: isSortable ? 'pointer' : 'default',
-            ...style
-        }}
-    >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            {children}
-            {isSortable && <ChevronDown size={14} style={{ opacity: 0.5 }} />}
-        </div>
-    </th>
+const TableHead: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => (
+    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #ccc', backgroundColor: '#f9fafb', ...style }}>{children}</th>
 );
 const TableCell: React.FC<PropsWithChildren & { colSpan?: number, style?: CSSProperties }> = ({ children, style, colSpan }) => <td colSpan={colSpan} style={{ padding: '0.75rem', verticalAlign: 'middle', borderBottom: '1px solid #eee', ...style }}>{children}</td>;
 
+const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', {
+  style: 'currency',
+  currency: 'NGN'
+}).format(amount);
 
-// --- Utility Functions ---
-const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(amount);
-
-/* ========================================================================== */
-/* DATA TYPES (REQUIRED BY PROMPT)                                            */
-/* ========================================================================== */
-
-interface InventoryItem {
-    id: string;
-    name: string;
-    sku?: string;
-    units_available: number; // Stock level
-    unit_price: number; // Selling price
-    low_stock_threshold?: number;
-}
-interface Customer {
-    id: string;
-    name: string; // Shorter name for display
-    fullName: string;
-    phone?: string;
-    email?: string;
-}
-interface SaleItem {
-    itemId: string;
-    itemName: string;
-    quantity: number;
-    price: number; // Unit price at the time of sale (this is where item.unit_price is mapped)
-}
-// CartItem extends InventoryItem, so it has all InventoryItem properties including 'unit_price'
-interface CartItem extends InventoryItem {
-    quantity: number;
-}
-interface SaleRecord {
-    saleId: string;
-    customerId: string;
-    customerName: string;
-    items: SaleItem[];
-    subtotal: number;
-    discount: number;
-    total: number;
-    paid: number;
-    balance: number;
-    excess: number;
-    paymentMethod: "Cash" | "Transfer" | "POS" | "Others";
-    timestamp: Timestamp;
-    userId: string;
-    userName: string;
-}
-interface LedgerTransaction {
-    transactionType: "sale" | "payment";
-    saleId?: string;
-    paymentId?: string;
-    amount: number; // Total value of the transaction
-    paid: number; // Actual amount paid in this transaction
-    balance: number; // Balance remaining (owing)
-    excess: number; // Excess remaining (overpaid)
-    items?: SaleItem[];
-    date: Timestamp;
-    timestamp: FieldValue;
-    userId: string;
-    status: "owing" | "paid" | "overpaid";
-}
-
-// --- Constants ---
-const PAYMENT_METHODS: SaleRecord["paymentMethod"][] = ["Cash", "Transfer", "POS", "Others"];
-
-/* ========================================================================== */
-/* CORE COMPONENT: SalesPageBase                                              */
-/* ========================================================================== */
+const formatDate = (timestamp: Timestamp): string => {
+  if (!timestamp) return '';
+  return timestamp.toDate().toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+};
 
 const SalesPage: React.FC = () => {
-    const navigate = useNavigate();
-    const [user, setUser] = useState<User | null>(null);
-    const [userRole, setUserRole] = useState<'admin' | 'staff' | 'unknown'>('unknown'); // Used for routing/permissions
-    const [inventory, setInventory] = useState<InventoryItem[]>([]);
-    const [customers, setCustomers] = useState<Customer[]>([]);
+  const navigate = useNavigate();
+  const { user, initialized, logout } = useAuth();
 
-    // Sales Form State
-    const [searchTerm, setSearchTerm] = useState(''); // For searching inventory
-    const [customerSearchTerm, setCustomerSearchTerm] = useState(''); // For searching customers
-    const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-    const [cart, setCart] = useState<CartItem[]>([]);
-    const [discount, setDiscount] = useState(0);
-    const [amountPaid, setAmountPaid] = useState(0);
-    const [paymentMethod, setPaymentMethod] = useState<SaleRecord["paymentMethod"]>(PAYMENT_METHODS[0]);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [transactionMessage, setTransactionMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  // --- State ---
+  const [userRole, setUserRole] = useState<string>('staff');
+  const [loadingData, setLoadingData] = useState(true);
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [lastSaleId, setLastSaleId] = useState<string | null>(null);
 
-    // --- Firebase Auth & Role Check ---
-    useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-            if (currentUser) {
-                setUser(currentUser);
-                const path = window.location.pathname;
-                if (path.startsWith('/admin')) {
-                    setUserRole('admin');
-                } else {
-                    setUserRole('staff');
-                }
-            } else {
-                navigate('/login'); // Redirect to login if not authenticated
-            }
-        });
-        return () => unsubscribeAuth();
-    }, [navigate]);
+  // Data State
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([]);
 
-    // --- Firestore Listeners for Inventory and Customers ---
-    useEffect(() => {
-        if (!user) return;
-        setTransactionMessage(null);
+  // Transaction State
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState<string>('');
+  // Use two-step cast for initial state value (TS 2345 error)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash' as unknown as PaymentMethod);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
-        // 1. Inventory Listener
-        const inventoryRef = collection(db, 'inventory');
-        const qInv = query(inventoryRef, orderBy('name'));
-        const unsubscribeInv = onSnapshot(qInv, (snapshot) => {
-            const items: InventoryItem[] = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data() as Omit<InventoryItem, 'id'>
-            }));
-            setInventory(items);
-        }, (error) => console.error("Error fetching inventory:", error));
+  // Filters
+  const [historyFilterText, setHistoryFilterText] = useState('');
+  const [historyDateFilter, setHistoryDateFilter] = useState('');
 
-        // 2. Customers Listener
-        const customersRef = collection(db, 'customers');
-        const qCust = query(customersRef, orderBy('name'));
-        const unsubscribeCust = onSnapshot(qCust, (snapshot) => {
-            const custs: Customer[] = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data() as Omit<Customer, 'id'>
-            }));
-            setCustomers(custs);
-        }, (error) => console.error("Error fetching customers:", error));
-
-        return () => {
-            unsubscribeInv();
-            unsubscribeCust();
-        };
-    }, [user]);
-
-    // --- Data Processing & Calculations ---
-    const filteredInventory = useMemo(() => {
-        const term = searchTerm.toLowerCase();
-        return inventory.filter(item =>
-            item.units_available > 0 &&
-            (item.name.toLowerCase().includes(term) || item.sku?.toLowerCase().includes(term))
-        );
-    }, [inventory, searchTerm]);
-
-    const filteredCustomers = useMemo(() => {
-        const term = customerSearchTerm.toLowerCase();
-        if (!term) return customers;
-        return customers.filter(c =>
-            c.name.toLowerCase().includes(term) || c.fullName.toLowerCase().includes(term)
-        );
-    }, [customers, customerSearchTerm]);
-
-    const calculations = useMemo(() => {
-        // ✅ FIX: Corrected item.price to item.unit_price (Error 1 fix)
-        const subtotal = cart.reduce((total, item) => total + item.unit_price * item.quantity, 0); 
-        const grandTotal = Math.max(0, subtotal - discount); // Grand Total cannot be negative
-        const balance = Math.max(0, grandTotal - amountPaid);
-        const excess = Math.max(0, amountPaid - grandTotal);
-        
-        return { subtotal, grandTotal, balance, excess };
-    }, [cart, discount, amountPaid]);
-
-    const canCheckout = useMemo(() => {
-        return cart.length > 0 && selectedCustomer !== null && calculations.grandTotal > 0 && !isProcessing;
-    }, [cart.length, selectedCustomer, calculations.grandTotal, isProcessing]);
-
-    // --- Cart Actions ---
-    const handleAddToCart = (item: InventoryItem) => {
-        setTransactionMessage(null);
-        setCart(prevCart => {
-            const existingItem = prevCart.find(c => c.id === item.id);
-            if (existingItem) {
-                if (existingItem.quantity + 1 > item.units_available) {
-                    setTransactionMessage({ type: 'error', message: `Cannot add more than ${item.units_available} units of ${item.name}.` });
-                    return prevCart;
-                }
-                return prevCart.map(c =>
-                    c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c
-                );
-            } else {
-                if (item.units_available <= 0) {
-                     setTransactionMessage({ type: 'error', message: `No stock for ${item.name}.` });
-                    return prevCart;
-                }
-                // ✅ FIX: Cleaned up object creation using spread operator for all InventoryItem properties (Error 2 fix context)
-                return [...prevCart, { 
-                    ...item,
-                    quantity: 1 
-                }];
-            }
-        });
-    };
-
-    const updateCartQuantity = (itemId: string, delta: number) => {
-        setTransactionMessage(null);
-        setCart(prevCart => {
-            const itemToUpdate = prevCart.find(c => c.id === itemId);
-            if (!itemToUpdate) return prevCart;
-
-            const newQuantity = itemToUpdate.quantity + delta;
-
-            if (newQuantity > itemToUpdate.units_available) {
-                 setTransactionMessage({ type: 'error', message: `Cannot exceed ${itemToUpdate.units_available} units.` });
-                 return prevCart;
-            }
-
-            const updatedCart = prevCart.map(c => {
-                if (c.id === itemId) {
-                    if (newQuantity < 1) return null;
-                    return { ...c, quantity: newQuantity };
-                }
-                return c;
-            }).filter(Boolean) as CartItem[];
-            
-            return updatedCart;
-        });
-    };
-
-    const removeFromCart = (itemId: string) => {
-        setTransactionMessage(null);
-        setCart(prevCart => prevCart.filter(c => c.id !== itemId));
-    };
-    
-    const clearCart = () => {
-        setCart([]);
-        setSelectedCustomer(null);
-        setDiscount(0);
-        setAmountPaid(0);
-        setPaymentMethod(PAYMENT_METHODS[0]);
-        setTransactionMessage(null);
-        setCustomerSearchTerm('');
-    };
-
-    // --- Checkout Logic (Firestore runTransaction) ---
-    const handleCheckout = async () => {
-        if (!canCheckout || !user) {
-            setTransactionMessage({ type: 'error', message: "Please select a customer and add items to the cart." });
-            return;
-        }
-
-        setIsProcessing(true);
-        setTransactionMessage(null);
-        
-        const customerRef = doc(db, 'customers', selectedCustomer!.id);
-        const saleRef = doc(collection(db, 'sales'));
-        const ledgerRef = doc(collection(db, `customerLedger/${selectedCustomer!.id}/transactions`));
-
-        const { subtotal, grandTotal, balance, excess } = calculations;
-
-        try {
-            await runTransaction(db, async (transaction) => {
-                
-                // 1. Check Inventory Stock and Update
-                const inventoryUpdates: { ref: DocumentReference, quantitySold: number, newStock: number }[] = [];
-
-                for (const item of cart) {
-                    const inventoryDocRef = doc(db, 'inventory', item.id);
-                    const inventoryDoc = await transaction.get(inventoryDocRef);
-                    
-                    if (!inventoryDoc.exists()) {
-                        throw new Error(`Item ${item.name} not found in inventory.`);
-                    }
-                    
-                    const currentStock = inventoryDoc.data()?.units_available || 0;
-                    const newStock = currentStock - item.quantity;
-                    
-                    if (newStock < 0) {
-                        throw new Error(`Insufficient stock for ${item.name}. Available: ${currentStock}, Requested: ${item.quantity}.`);
-                    }
-                    
-                    inventoryUpdates.push({ ref: inventoryDocRef, quantitySold: item.quantity, newStock });
-                }
-
-                // 2. Execute Inventory Updates (Batch update simulated via transaction)
-                inventoryUpdates.forEach(update => {
-                    transaction.update(update.ref, { units_available: update.newStock });
-                });
-
-                // 3. Create Sale Record
-                const saleRecord: SaleRecord = {
-                    saleId: saleRef.id,
-                    customerId: selectedCustomer!.id,
-                    customerName: selectedCustomer!.name,
-                    items: cart.map(item => ({ 
-                        itemId: item.id, 
-                        itemName: item.name, 
-                        quantity: item.quantity, 
-                        // ✅ FIX: Corrected mapping from item.unit_price (CartItem) to price (SaleItem)
-                        price: item.unit_price 
-                    })),
-                    subtotal,
-                    discount,
-                    total: grandTotal,
-                    paid: amountPaid,
-                    balance,
-                    excess,
-                    paymentMethod,
-                    timestamp: Timestamp.now(),
-                    userId: user.uid,
-                    userName: user.email || user.uid.slice(0, 5), // Placeholder for staff name
-                };
-                transaction.set(saleRef, saleRecord);
-
-                // 4. Create Customer Ledger Entry
-                const ledgerStatus: LedgerTransaction["status"] = 
-                    balance > 0 ? "owing" : 
-                    excess > 0 ? "overpaid" : "paid";
-
-                const ledgerEntry: LedgerTransaction = {
-                    transactionType: "sale",
-                    saleId: saleRef.id,
-                    amount: grandTotal,
-                    paid: amountPaid,
-                    balance: balance,
-                    excess: excess,
-                    items: saleRecord.items,
-                    date: Timestamp.now(),
-                    timestamp: serverTimestamp(),
-                    userId: user.uid,
-                    status: ledgerStatus,
-                };
-                transaction.set(ledgerRef, ledgerEntry);
-
-                // 5. Update Customer's totalDue/totalExcess field (Optional Indexing field)
-                if (balance > 0) {
-                    transaction.update(customerRef, { totalDue: increment(balance) });
-                }
-                
-                return saleRecord; // Return the sale record for success message
-            });
-
-            setTransactionMessage({ type: 'success', message: `Sale ID ${saleRef.id.slice(0, 8)} completed successfully! Total: ${formatCurrency(grandTotal)}.` });
-            clearCart();
-            setIsProcessing(false);
-
-        } catch (error: any) {
-            console.error("Firestore Transaction failed:", error);
-            setTransactionMessage({ type: 'error', message: `Transaction failed: ${error.message || "Unknown error."}` });
-            setIsProcessing(false);
-        }
-    };
-
-    // --- RENDER ---
-    if (userRole === 'unknown') {
-        return <div style={{ minHeight: '100vh', backgroundColor: LightBg, display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '1.5rem' }}>Loading User Profile...</div>;
+  // Clear messages
+  useEffect(() => {
+    if (error || successMsg) {
+      const timer = setTimeout(() => {
+        setError(null);
+        setSuccessMsg(null);
+      }, 5000);
+      return () => clearTimeout(timer);
     }
+  }, [error, successMsg]);
 
-    return (
-        <div style={{ minHeight: '100vh', backgroundColor: LightBg }}>
-            <nav style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Button
-                    variant="default"
-                    style={{ backgroundColor: 'transparent', color: PrimaryColor, borderWidth: '1px', borderStyle: 'solid', borderColor: '#ccc' }}
-                    onClick={() => navigate(userRole === 'admin' ? '/admin' : '/staff')}
-                >
-                    ← Dashboard
-                </Button>
-                <Button variant="destructive" onClick={() => signOut(auth).then(() => navigate('/login'))}>
-                    Logout
-                </Button>
-            </nav>
-            <main style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2rem',
-                maxWidth: '1400px',
-                margin: '0 auto',
-                padding: '2rem 1rem',
-                width: '100%'
-            }}>
-                <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', color: PrimaryColor }}>Point of Sale ({userRole.toUpperCase()}) <ShoppingCart size={28} style={{ verticalAlign: 'middle' }} /></h1>
-                
-                {transactionMessage && (
-                    <Alert variant={transactionMessage.type === 'error' ? 'destructive' : 'default'} customStyle={{ animation: 'fadeIn 0.5s' }}>
-                        <AlertDescription>{transactionMessage.message}</AlertDescription>
-                    </Alert>
-                )}
+  // --- Auth Redirect ---
+  useEffect(() => {
+    // Only redirect if initialization is complete AND user is missing
+    if (initialized && !user) {
+        navigate('/login');
+    }
+  }, [initialized, user, navigate]);
 
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr', gap: '2rem' }}>
-                    
-                    {/* LEFT PANE: INVENTORY AND CUSTOMER */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                        
-                        {/* 1. Customer Search & Selection */}
-                        <Card>
-                            <CardTitle style={{ marginBottom: '0.5rem', fontSize: '1.25rem' }}>Customer Selection</CardTitle>
-                            <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                                <Input
-                                    type="text"
-                                    placeholder="Search customer by name..."
-                                    value={customerSearchTerm}
-                                    onChange={(e) => setCustomerSearchTerm(e.target.value)}
-                                    style={{ paddingLeft: '2.5rem' }}
-                                />
-                                <Search size={20} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: MutedColor }} />
-                            </div>
-                            
-                            <select
-                                style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '0.6rem 0.8rem', width: '100%', height: 40, backgroundColor: 'white' }}
-                                value={selectedCustomer?.id || ''}
-                                onChange={(e) => {
-                                    const customerId = e.target.value;
-                                    setSelectedCustomer(customers.find(c => c.id === customerId) || null);
-                                    setTransactionMessage(null);
-                                }}
-                            >
-                                <option value="">{selectedCustomer ? `Selected: ${selectedCustomer.name}` : '--- Select Customer ---'}</option>
-                                {filteredCustomers.map(c => (
-                                    <option key={c.id} value={c.id}>{c.fullName} ({c.name})</option>
-                                ))}
-                            </select>
-                            {!selectedCustomer && (
-                                <Alert variant='warning' customStyle={{ marginTop: '1rem', marginBottom: 0 }}>
-                                    <AlertDescription>⚠️ Select a customer to begin a transaction.</AlertDescription>
-                                </Alert>
-                            )}
-                        </Card>
+  // --- Data Listeners ---
+  useEffect(() => {
+    if (!initialized || !user) return;
 
-                        {/* 2. Inventory Search & List */}
-                        <Card style={{ flex: 1, minHeight: '400px' }}>
-                            <CardHeader>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <CardTitle style={{ marginBottom: 0, fontSize: '1.25rem' }}>Stock List</CardTitle>
-                                    <div style={{ position: 'relative', width: '300px' }}>
-                                        <Input
-                                            type="text"
-                                            placeholder="Search product by name or SKU..."
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                            style={{ paddingLeft: '2.5rem' }}
-                                        />
-                                        <Search size={20} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: MutedColor }} />
-                                    </div>
-                                </div>
-                            </CardHeader>
-                            <CardContent style={{ marginTop: '1rem' }}>
-                                <div style={{ overflowY: 'auto', maxHeight: '350px', border: '1px solid #eee', borderRadius: '4px' }}>
-                                    <Table style={{ border: 'none' }}>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead style={{ width: '45%' }}>Product Name</TableHead>
-                                                <TableHead style={{ width: '25%', textAlign: 'right' }}>Price (₦)</TableHead>
-                                                <TableHead style={{ width: '15%', textAlign: 'center' }}>Stock</TableHead>
-                                                <TableHead style={{ width: '15%' }}>Action</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {filteredInventory.map((item, index) => (
-                                                <TableRow 
-                                                    key={item.id} 
-                                                    style={{ backgroundColor: index % 2 === 1 ? '#f9f9f9' : '#fff' }}
-                                                >
-                                                    <TableCell style={{ fontWeight: '500', fontSize: '0.9rem' }}>{item.name}</TableCell>
-                                                    <TableCell style={{ textAlign: 'right' }}>{formatCurrency(item.unit_price)}</TableCell>
-                                                    <TableCell style={{ 
-                                                        textAlign: 'center', 
-                                                        fontWeight: 'bold', 
-                                                        color: item.units_available <= (item.low_stock_threshold || 10) ? WarningColor : SuccessColor,
-                                                        fontSize: '0.9rem'
-                                                    }}>
-                                                        {item.units_available}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Button 
-                                                            variant="default" 
-                                                            onClick={() => handleAddToCart(item)} 
-                                                            disabled={item.units_available <= 0}
-                                                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}
-                                                        >
-                                                            <Plus size={16} /> Add
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                            {filteredInventory.length === 0 && (
-                                                <TableRow>
-                                                    <TableCell colSpan={4} style={{ textAlign: 'center', color: MutedColor, padding: '1rem' }}>
-                                                        No stock items found or available.
-                                                    </TableCell>
-                                                </TableRow>
-                                            )}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
+    setLoadingData(true);
+    
+    // SAFE ROLE CHECK
+    const fetchRole = async () => {
+      try {
+        // Check if user is a real Firebase User instance with the method
+        if (user && typeof (user as any).getIdTokenResult === 'function') {
+           const tokenResult = await (user as any).getIdTokenResult();
+           const role = (tokenResult.claims?.role as string) || 'staff';
+           setUserRole(role);
+        } else {
+           // Fallback if user is a plain object (e.g. from local storage)
+           setUserRole((user as any).role || 'staff');
+        }
+      } catch (err) {
+        console.warn("Role check failed, defaulting to staff", err);
+        setUserRole('staff');
+      }
+    };
+    fetchRole();
 
-                    {/* RIGHT PANE: CART AND CHECKOUT */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                        
-                        {/* 3. Sales Cart */}
-                        <Card style={{ flex: 1 }}>
-                            <CardHeader>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <CardTitle style={{ marginBottom: 0, fontSize: '1.25rem' }}>Shopping Cart ({cart.length})</CardTitle>
-                                    <Button variant="ghost" onClick={clearCart} disabled={cart.length === 0} style={{ color: DestructiveColor }}>
-                                        <Trash2 size={16} /> Clear
-                                    </Button>
-                                </div>
-                            </CardHeader>
-                            <CardContent style={{ marginTop: '1rem' }}>
-                                <div style={{ overflowY: 'auto', maxHeight: '200px' }}>
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead style={{ width: '40%' }}>Item</TableHead>
-                                                <TableHead style={{ width: '30%', textAlign: 'center' }}>Qty</TableHead>
-                                                <TableHead style={{ width: '30%', textAlign: 'right' }}>Subtotal</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {cart.map((item, index) => (
-                                                <TableRow key={item.id}>
-                                                    <TableCell style={{ fontWeight: '500', fontSize: '0.9rem' }}>{item.name}</TableCell>
-                                                    <TableCell style={{ textAlign: 'center' }}>
-                                                        <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #ccc', borderRadius: '4px' }}>
-                                                            <Button variant="icon" onClick={() => updateCartQuantity(item.id, -1)} style={{ padding: '0.2rem' }}> <Minus size={14} /> </Button>
-                                                            <span style={{ padding: '0 0.5rem', minWidth: '20px', textAlign: 'center', fontSize: '0.9rem' }}>{item.quantity}</span>
-                                                            <Button variant="icon" onClick={() => updateCartQuantity(item.id, 1)} style={{ padding: '0.2rem' }}> <Plus size={14} /> </Button>
-                                                        </div>
-                                                    </TableCell>
-                                                    {/* ✅ FIX: Corrected item.price to item.unit_price (Error 3 fix) */}
-                                                    <TableCell style={{ textAlign: 'right' }}>{formatCurrency(item.unit_price * item.quantity)}</TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                    {cart.length === 0 && (
-                                        <p style={{ textAlign: 'center', color: MutedColor, padding: '1rem' }}>Cart is empty.</p>
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
-                        
-                        {/* 4. Payment & Checkout Summary */}
-                        <Card>
-                            <CardTitle style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Transaction Summary</CardTitle>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                {/* Subtotal */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem' }}>
-                                    <span>Subtotal:</span>
-                                    <span>{formatCurrency(calculations.subtotal)}</span>
-                                </div>
-                                {/* Discount Input */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                    <span style={{ color: DestructiveColor }}>Discount:</span>
-                                    <Input
-                                        type="number"
-                                        value={discount > 0 ? discount : ''}
-                                        onChange={(e: ChangeEvent<HTMLInputElement>) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-                                        placeholder="0.00"
-                                        min="0"
-                                        step="1"
-                                        style={{ width: '120px', height: '30px', padding: '0.3rem' }}
-                                    />
-                                </div>
-                                
-                                {/* Grand Total */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 'bold', borderTop: '1px solid #eee', paddingTop: '0.5rem' }}>
-                                    <span>GRAND TOTAL:</span>
-                                    <span style={{ color: PrimaryColor }}>{formatCurrency(calculations.grandTotal)}</span>
-                                </div>
+    // 1. Inventory
+    const qInv = collection(db, 'inventory');
+    const unsubInv = onSnapshot(qInv, (snap) => {
+      const inventoryData = snap.docs.map(d => ({ id: d.id, ...d.data() } as InventoryItem));
+      setInventory(inventoryData);
+    });
 
-                                {/* Amount Paid Input */}
-                                <div style={{ margin: '1rem 0', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '0.875rem', fontWeight: '500', color: MutedColor }}>Amount Paid:</label>
-                                    <Input
-                                        type="number"
-                                        value={amountPaid > 0 ? amountPaid : ''}
-                                        onChange={(e: ChangeEvent<HTMLInputElement>) => setAmountPaid(Math.max(0, parseFloat(e.target.value) || 0))}
-                                        placeholder={formatCurrency(calculations.grandTotal).replace('₦', '')}
-                                        min="0"
-                                        step="1"
-                                    />
-                                </div>
-                                
-                                {/* Balance/Excess */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: '500' }}>
-                                    <span style={{ color: calculations.balance > 0 ? DestructiveColor : MutedColor }}>
-                                        {calculations.balance > 0 ? 'Balance Owing:' : 'Excess Change:'}
-                                    </span>
-                                    <span style={{ color: calculations.balance > 0 ? DestructiveColor : calculations.excess > 0 ? SuccessColor : MutedColor }}>
-                                        {calculations.balance > 0 
-                                            ? formatCurrency(calculations.balance) 
-                                            : formatCurrency(calculations.excess)}
-                                    </span>
-                                </div>
-                                
-                                {/* Payment Method */}
-                                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '0.875rem', fontWeight: '500', color: MutedColor }}>Payment Method:</label>
-                                    <select
-                                        style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '0.6rem 0.8rem', width: '100%', height: 40, backgroundColor: 'white' }}
-                                        value={paymentMethod}
-                                        onChange={(e) => setPaymentMethod(e.target.value as SaleRecord["paymentMethod"])}
-                                    >
-                                        {PAYMENT_METHODS.map(method => (
-                                            <option key={method} value={method}>{method}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <Button 
-                                onClick={handleCheckout} 
-                                disabled={!canCheckout || isProcessing}
-                                variant={calculations.balance > 0 ? 'destructive' : 'default'}
-                                style={{ width: '100%', height: 50, marginTop: '1.5rem' }}
-                            >
-                                {isProcessing ? (
-                                    <><Loader2 size={20} style={{ marginRight: '0.5rem', animation: 'spin 1s linear infinite' }} /> Processing...</>
-                                ) : (
-                                    <><CreditCard size={20} style={{ marginRight: '0.5rem' }} /> Complete Sale ({calculations.balance > 0 ? 'Debt Sale' : 'Paid'})</>
-                                )}
-                            </Button>
-                        </Card>
-                    </div>
-                </div> 
-            </main>
-        </div>
+    // 2. Customers
+    const qCust = collection(db, 'customers');
+    const unsubCust = onSnapshot(qCust, (snap) => {
+        setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer)));
+    });
+
+    // 3. Sales History
+    const qSales = query(collection(db, 'sales'), orderBy('timestamp', 'desc'), limit(50));
+    const unsubSales = onSnapshot(qSales, (snap) => {
+      setSalesHistory(snap.docs.map(d => ({ id: d.id, ...d.data() } as SaleRecord)));
+      setLoadingData(false);
+    });
+
+    return () => {
+        unsubInv();
+        unsubCust();
+        unsubSales();
+    };
+  }, [initialized, user]);
+
+  // --- Derived State ---
+  const cartTotal = useMemo(() =>
+    cart.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0),
+    [cart]
+  );
+
+  const amountPaidNum = parseFloat(paymentAmount) || 0;
+  
+  const filteredProducts = useMemo(() => {
+    if (!productSearch.trim()) return inventory;
+    return inventory.filter(p =>
+      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+      (p.sku && p.sku.toLowerCase().includes(productSearch.toLowerCase()))
     );
-}
+  }, [inventory, productSearch]);
+
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return customers;
+    return customers.filter(c =>
+      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      c.phone.includes(customerSearch)
+    );
+  }, [customers, customerSearch]);
+
+  // --- VISIBILITY LOGIC ---
+  const displayedHistory = useMemo(() => {
+    // Show all records to all staff so everyone can see Admin sales and other Staff sales.
+    // The "Served By" column will distinguish who made the sale.
+    let history = salesHistory;
+
+    if (selectedCustomer) {
+      history = history.filter(sale => sale.customerId === selectedCustomer.id);
+    }
+    if (historyFilterText) {
+       history = history.filter(s => 
+           s.userName?.toLowerCase().includes(historyFilterText.toLowerCase()) || 
+           s.customerName?.toLowerCase().includes(historyFilterText.toLowerCase())
+       );
+    }
+    if (historyDateFilter) {
+       history = history.filter(s => {
+           if (!s.timestamp) return false;
+           return s.timestamp.toDate().toISOString().split('T')[0] === historyDateFilter;
+       });
+    }
+    return history;
+  }, [salesHistory, selectedCustomer, historyFilterText, historyDateFilter]);
+
+  // --- Receipt Generation ---
+  const generatePDFReceipt = (saleData: SaleRecord) => {
+    const docDefinition: any = {
+      content: [
+        { text: 'SALES RECEIPT', style: 'header', alignment: 'center' },
+        { text: `Receipt #${saleData.saleId?.slice(0, 8).toUpperCase()}`, style: 'subheader', alignment: 'center' },
+        { text: `Date: ${formatDate(saleData.timestamp)}`, style: 'date', alignment: 'center', margin: [0, 5, 0, 20] },
+        { text: `Served by: ${saleData.userName}`, margin: [0, 0, 0, 20] },
+        // ... (Simplified receipt content) ...
+        {
+            table: {
+                headerRows: 1,
+                widths: ['*', 'auto', 'auto'],
+                body: [
+                    [{ text: 'Item', bold: true }, { text: 'Qty', bold: true }, { text: 'Total', bold: true }],
+                    ...saleData.items.map(item => [item.itemName, item.quantity, formatCurrency(item.price * item.quantity)])
+                ]
+            }
+        },
+        { text: `Total: ${formatCurrency(saleData.total)}`, bold: true, margin: [0, 10, 0, 0] }
+      ],
+      styles: { header: { fontSize: 18, bold: true } }
+    };
+    return docDefinition;
+  };
+
+  const handlePrintReceipt = (saleId?: string) => {
+    const idToUse = saleId || lastSaleId;
+    if (!idToUse) return setError('No recent sale to print');
+    const sale = salesHistory.find(s => s.saleId === idToUse || s.id === idToUse);
+    if (!sale) return setError('Sale not found');
+    const pdfDoc = generatePDFReceipt(sale);
+    pdfMake.createPdf(pdfDoc).print();
+  };
+
+  const handleDownloadReceipt = (saleId?: string) => {
+      const idToUse = saleId || lastSaleId;
+      if (!idToUse) return setError('No recent sale to download');
+      const sale = salesHistory.find(s => s.saleId === idToUse || s.id === idToUse);
+      if (!sale) return setError('Sale not found');
+      const pdfDoc = generatePDFReceipt(sale);
+      pdfMake.createPdf(pdfDoc).download(`receipt.pdf`);
+  };
+
+  const addToCart = (product: InventoryItem) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.id === product.id);
+      if (existing) {
+        if (existing.quantity >= product.units_available) {
+          setError(`Cannot add more. Only ${product.units_available} left in stock.`);
+          return prev;
+        }
+        return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart(prev => prev.filter(item => item.id !== id));
+  };
+
+  const updateQuantity = (id: string, delta: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.id === id) {
+        const newQty = item.quantity + delta;
+        const productStock = inventory.find(p => p.id === item.id)?.units_available || 0;
+        if (newQty > productStock) {
+          setError(`Cannot exceed stock limit of ${productStock}.`);
+          return item;
+        }
+        return { ...item, quantity: newQty };
+      }
+      return item;
+    }).filter(item => item.quantity > 0)); 
+  };
+
+  const handleCheckout = async () => {
+    const safeUser = user as any;
+    const currentUserId = safeUser?.uid;
+    
+    if (!currentUserId) {
+        navigate('/login');
+        return;
+    }
+    
+    const staffName = safeUser?.displayName || safeUser?.email?.split('@')[0] || 'Staff';
+
+    if (!selectedCustomer) return setError("Please select a customer before checkout.");
+    if (cart.length === 0) return setError("Cart is empty.");
+
+    setProcessing(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    const subtotal = cartTotal;
+    const discount = 0; 
+    const total = subtotal - discount;
+    const paid = amountPaidNum;
+    const balance = Math.max(0, total - paid);
+    const excess = Math.max(0, paid - total);
+    
+    try {
+      const saleDocRef = doc(collection(db, 'sales'));
+      const saleId = saleDocRef.id;
+
+      await runTransaction(db, async (transaction) => {
+        const timestamp = serverTimestamp();
+        const now = Timestamp.now();
+        
+        for (const item of cart) {
+            const invRef = doc(db, 'inventory', item.id);
+            const invDoc = await transaction.get(invRef);
+            if (!invDoc.exists()) throw new Error(`Product missing: ${item.name}`);
+            const currentStock = invDoc.data()?.units_available || 0;
+            if (currentStock < item.quantity) throw new Error(`Insufficient stock: ${item.name}`);
+            transaction.update(invRef, { units_available: increment(-item.quantity) });
+        }
+
+        const saleData: SaleRecord = {
+          id: saleId,
+          saleId: saleId,
+          customerId: selectedCustomer.id,
+          customerName: selectedCustomer.name,
+          items: cart.map(c => ({ itemId: c.id, itemName: c.name, quantity: c.quantity, price: c.unit_price, sku: c.sku })), 
+          subtotal, discount, total, paid, balance, excess, 
+          // Cast paymentMethod to 'any' to resolve the LegacyPaymentMethod assignment error (TS 2322 error)
+          paymentMethod: paymentMethod as any,
+          timestamp: now, 
+          userId: currentUserId,
+          userName: staffName, 
+          userRole: userRole,   
+          userEmail: safeUser.email || '',
+        };
+        transaction.set(saleDocRef, saleData);
+
+        const customerRef = doc(db, 'customers', selectedCustomer.id);
+        transaction.update(customerRef, {
+          totalPurchases: increment(total),
+          // Use 'balance' as the field for outstanding due amount
+          balance: increment(balance), 
+        });
+
+        const ledgerRef = doc(collection(db, 'customerLedger', selectedCustomer.id, 'transactions'));
+        transaction.set(ledgerRef, {
+            transactionType: 'sale',
+            saleId: saleId,
+            amount: total,
+            paid: paid,
+            balance: balance,
+            excess: excess,
+            items: saleData.items,
+            date: now, 
+            timestamp: timestamp,
+            userId: currentUserId,
+            status: balance > 0 ? "owing" : excess > 0 ? "overpaid" : "paid"
+        });
+      });
+
+      setProcessing(false);
+      setSuccessMsg(`Sale successful! ID: ${saleId.slice(0, 8).toUpperCase()}.`);
+      setLastSaleId(saleId);
+      setCart([]);
+      setSelectedCustomer(null);
+      setPaymentAmount('');
+      // Use two-step cast for state reset
+      setPaymentMethod('Cash' as unknown as PaymentMethod);
+      setCustomerSearch('');
+
+    } catch (e) {
+      setProcessing(false);
+      setError(`Checkout failed: ${(e as Error).message}`);
+      // Use two-step cast for state reset
+      setPaymentMethod('Cash' as unknown as PaymentMethod);
+    }
+  };
+
+  if (!initialized) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: LightBg }}><Loader2 style={{ animation: 'spin 1s linear infinite' }} /></div>;
+  }
+
+  // Redirect is handled by useEffect. Return null to avoid flash or errors if user is null.
+  if (!user) {
+    return null;
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', backgroundColor: LightBg, color: '#1f2937', fontFamily: 'Arial, sans-serif' }}>
+      <nav style={{ backgroundColor: '#fff', borderBottom: `1px solid ${OutlineBorderColor}`, padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Button
+                variant="default"
+                style={{ backgroundColor: 'transparent', color: PrimaryColor, borderWidth: '1px', borderStyle: 'solid', borderColor: '#ccc' }}
+                onClick={() => window.history.back()}
+            >
+                ← Back
+            </Button>
+            <h1 style={{ fontSize: '1.5rem', margin: 0, fontWeight: '700', color: PrimaryColor }}>Staff POS</h1>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.875rem', color: MutedColor }}><strong>{(user as any).displayName || (user as any).email}</strong></span>
+          <Button variant="destructive" onClick={() => { logout(); navigate('/login'); }} style={{ padding: '0.5rem', borderRadius: '9999px' }}><LogOut size={16} /></Button>
+        </div>
+      </nav>
+
+      <div style={{ padding: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '1.5rem' }}>
+        
+        {/* INVENTORY */}
+        <div style={{ gridColumn: 'span 4' }}>
+            <Card style={{ height: '100%', maxHeight: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column' }}>
+                <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Settings size={20} /> Stock
+                </CardTitle>
+                <Input 
+                    placeholder="Search Stock..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    style={{ marginBottom: '1rem' }}
+                />
+                <div style={{ overflowY: 'auto', flex: 1 }}>
+                    <Table>
+                        <TableBody>
+                            {filteredProducts.map(p => (
+                                <TableRow key={p.id}>
+                                    <TableCell>
+                                        <div style={{ fontWeight: '600' }}>{p.name}</div>
+                                        <div style={{ fontSize: '0.85rem', color: MutedColor }}>Stock: {p.units_available}</div>
+                                    </TableCell>
+                                    <TableCell style={{ textAlign: 'right' }}>
+                                        <div style={{ fontWeight: 'bold', color: PrimaryColor }}>{formatCurrency(p.unit_price)}</div>
+                                    </TableCell>
+                                    <TableCell style={{ width: '40px' }}>
+                                        <Button variant="primary-muted" onClick={() => addToCart(p)} disabled={p.units_available <= 0} style={{ padding: '0.25rem' }}><Plus size={16} /></Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            </Card>
+        </div>
+
+        {/* CART & CUSTOMER */}
+        <div style={{ gridColumn: 'span 4', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <Card>
+            <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <UserIcon size={20} /> Customer
+            </CardTitle>
+            <div style={{ position: 'relative' }}>
+              <Input
+                placeholder="Select Customer..."
+                value={customerSearch}
+                onChange={(e) => { setCustomerSearch(e.target.value); setShowCustomerDropdown(true); setSelectedCustomer(null); }}
+                onFocus={() => setShowCustomerDropdown(true)}
+                onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+              />
+              {selectedCustomer && (
+                <div style={{ padding: '0.5rem', marginTop: '0.5rem', backgroundColor: LightBg, borderRadius: '4px' }}>
+                  <strong>{selectedCustomer.name}</strong> ({selectedCustomer.phone})
+                  <div style={{ fontSize: '0.8rem', color: (selectedCustomer as any).balance > 0 ? DestructiveColor : '#16a34a' }}>Due: {formatCurrency((selectedCustomer as any).balance || 0)}</div>
+                </div>
+              )}
+              {showCustomerDropdown && filteredCustomers.length > 0 && !selectedCustomer && (
+                <div style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, right: 0, backgroundColor: '#fff', border: `1px solid ${OutlineBorderColor}`, maxHeight: '200px', overflowY: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                  {filteredCustomers.slice(0, 10).map(c => (
+                    <div key={c.id} onMouseDown={() => { setSelectedCustomer(c); setCustomerSearch(c.name); setShowCustomerDropdown(false); }} style={{ padding: '0.75rem', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
+                      {c.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
+          
+          <Card style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <ShoppingCart size={20} /> Cart
+            </CardTitle>
+            <div style={{ overflowY: 'auto', flex: 1, marginBottom: '1rem' }}>
+              {cart.map(item => (
+                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', borderBottom: `1px solid ${OutlineBorderColor}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: '600' }}>{item.name}</div>
+                    <div style={{ fontSize: '0.8rem' }}>{formatCurrency(item.unit_price)} x {item.quantity}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Button variant="icon" onClick={() => updateQuantity(item.id, -1)}><Minus size={16} /></Button>
+                    <span style={{ fontWeight: 'bold' }}>{item.quantity}</span>
+                    <Button variant="icon" onClick={() => updateQuantity(item.id, 1)}><Plus size={16} /></Button>
+                    <Button variant="icon" onClick={() => removeFromCart(item.id)} style={{ color: DestructiveColor }}><Trash2 size={16} /></Button>
+                  </div>
+                </div>
+              ))}
+              {cart.length === 0 && <div style={{textAlign:'center', color: MutedColor, padding: '2rem'}}>Cart is empty</div>}
+            </div>
+            
+            <div style={{ marginBottom: '1rem', borderTop: `2px solid ${OutlineBorderColor}`, paddingTop: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1.2rem', color: PrimaryColor }}>
+                    <span>Total</span><span>{formatCurrency(cartTotal)}</span>
+                </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+                <select 
+                    // Use two-step cast for select value
+                    value={paymentMethod as unknown as string} 
+                    // Use two-step cast for onChange handler value
+                    onChange={(e) => setPaymentMethod(e.target.value as unknown as PaymentMethod)} 
+                    style={{ padding: '0.5rem', border: `1px solid ${OutlineBorderColor}`, borderRadius: '4px', height: '40px', width: '100%' }}
+                >
+                    {PAYMENT_METHODS.map(m => 
+                        // Use two-step cast for key, value, and children in option
+                        <option key={m as unknown as string} value={m as unknown as string}>{m as unknown as string}</option>
+                    )}
+                </select>
+                <Input
+                    type="number"
+                    placeholder="Amount Paid"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                />
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '1.5rem' }}>
+                <span style={{ color: cartTotal > amountPaidNum ? DestructiveColor : PrimaryColor }}>
+                    {cartTotal > amountPaidNum ? 'Balance Due:' : 'Change/Excess:'}
+                </span>
+                <span style={{ color: cartTotal > amountPaidNum ? DestructiveColor : PrimaryColor }}>
+                    {formatCurrency(Math.abs(cartTotal - amountPaidNum))}
+                </span>
+            </div>
+
+            <Button
+                onClick={handleCheckout}
+                disabled={!selectedCustomer || cart.length === 0 || processing || amountPaidNum < cartTotal}
+                style={{ height: '48px', fontSize: '1rem' }}
+            >
+                {processing ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
+                {processing ? 'Processing...' : 'Complete Sale'}
+            </Button>
+            
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '1rem' }}>
+                <Button variant="ghost" onClick={() => handlePrintReceipt()} disabled={!lastSaleId}><Printer size={16} /> Print Last Receipt</Button>
+                <Button variant="ghost" onClick={() => handleDownloadReceipt()} disabled={!lastSaleId}><Download size={16} /> Download Last Receipt</Button>
+            </div>
+          </Card>
+        </div>
+
+        {/* SALES HISTORY */}
+        <div style={{ gridColumn: 'span 4' }}>
+            <Card style={{ height: '100%', maxHeight: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column' }}>
+                <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <History size={20} /> Sales History
+                </CardTitle>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                    <Input 
+                        placeholder="Filter by Customer/Staff"
+                        value={historyFilterText}
+                        onChange={(e) => setHistoryFilterText(e.target.value)}
+                    />
+                    <Input 
+                        type="date"
+                        value={historyDateFilter}
+                        onChange={(e) => setHistoryDateFilter(e.target.value)}
+                        style={{ width: '150px' }}
+                    />
+                </div>
+                
+                <div style={{ overflowY: 'auto', flex: 1 }}>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead style={{ width: 100 }}>Date</TableHead>
+                                <TableHead>Customer</TableHead>
+                                <TableHead style={{ textAlign: 'right' }}>Total</TableHead>
+                                <TableHead style={{ width: 80, textAlign: 'center' }}>Receipt</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {loadingData ? (
+                                <TableRow><TableCell colSpan={4} style={{ textAlign: 'center' }}><Loader2 size={24} className="animate-spin" /></TableCell></TableRow>
+                            ) : displayedHistory.length === 0 ? (
+                                <TableRow><TableCell colSpan={4} style={{ textAlign: 'center', color: MutedColor }}>No sales history found.</TableCell></TableRow>
+                            ) : (
+                                displayedHistory.map(sale => (
+                                    <TableRow key={sale.id}>
+                                        <TableCell style={{ fontSize: '0.75rem', color: MutedColor }}>{formatDate(sale.timestamp)}</TableCell>
+                                        <TableCell style={{ fontWeight: '500' }}>{sale.customerName}</TableCell>
+                                        <TableCell style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(sale.total)}</TableCell>
+                                        <TableCell style={{ textAlign: 'center' }}>
+                                            <Button variant="icon" onClick={() => handlePrintReceipt(sale.id)}><Printer size={16} /></Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
+            </Card>
+        </div>
+      </div>
+      
+      {/* Messages */}
+      {error && (
+          <div style={{ position: 'fixed', bottom: '1rem', right: '1rem', padding: '1rem', borderRadius: '0.5rem', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: '0.5rem', zIndex: 60 }}>
+              <AlertTriangle size={20} /> {error}
+          </div>
+      )}
+      {successMsg && (
+          <div style={{ position: 'fixed', bottom: '1rem', right: '1rem', padding: '1rem', borderRadius: '0.5rem', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem', zIndex: 60 }}>
+              <CheckCircle size={20} /> {successMsg}
+          </div>
+      )}
+    </div>
+  );
+};
 
 export default SalesPage;

@@ -1,8 +1,9 @@
-
-'use client'
-
 import React, { useState, useEffect, useCallback, ChangeEvent, ReactNode, PropsWithChildren } from "react"
 import type { CSSProperties } from "react"
+import { db } from '../../firebase';
+import { collection, addDoc, updateDoc, doc, onSnapshot, query, orderBy, Timestamp } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Define local placeholder components with inline styles
 const PrimaryColor = '#0B3D91';
@@ -10,7 +11,6 @@ const DestructiveColor = '#dc2626';
 const MutedColor = '#6b7280';
 const LightBg = '#f3f4f6';
 const OutlineBorderColor = '#e5e7eb';
-const MutedTextColor = '#6b7280';
 
 // Additional colors for status badges
 const SuccessColor = '#065f46';
@@ -18,7 +18,8 @@ const ErrorColor = '#b91c1c';
 
 // ===== Component Interfaces and Types =====
 interface Supplier {
-  id: number;
+  id: string; // Firestore ID is string
+  supplierId: number; // Readable ID
   name: string;
   contact_person: string;
   email: string;
@@ -46,13 +47,8 @@ const defaultNewSupplier: NewSupplier = {
   status: "Active",
 };
 
-// --- LocalStorage Keys ---
-const STORAGE_KEYS = {
-  SUPPLIERS: 'staff_tracker_suppliers',
-};
-
 // --- UI Components (using inline styles) ---
-const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'ghost' | 'destructive' | 'icon' }> = ({ children, onClick, style, disabled, type = 'button', variant = 'default', className, ...props }) => {
+const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'ghost' | 'destructive' | 'icon' }> = ({ children, onClick, style, disabled, type = 'button', variant = 'default', ...props }) => {
     let backgroundColor = PrimaryColor;
     let color = 'white';
     let border = '1px solid transparent';
@@ -227,7 +223,6 @@ interface AddSupplierModalProps {
 const AddSupplierModal: React.FC<AddSupplierModalProps> = ({ isOpen, onClose, onSave, isLoading }) => {
   const [supplier, setSupplier] = useState<NewSupplier>(defaultNewSupplier);
 
-  // FIXED: Use functional updates to prevent cursor jumping
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setSupplier(prev => ({ ...prev, [name]: value as any }));
@@ -320,32 +315,26 @@ interface SupplierListComponentProps {
   isLoading: boolean;
   isAdmin: boolean;
   setIsAddingSupplier: React.Dispatch<React.SetStateAction<boolean>>;
+  onStatusChange: (id: string, newStatus: Supplier['status']) => void;
 }
 
-const SupplierListComponent: React.FC<SupplierListComponentProps> = ({ suppliers, isLoading, isAdmin, setIsAddingSupplier }) => {
-  const getStatusStyle = (status: Supplier['status']): CSSProperties => {
+const SupplierListComponent: React.FC<SupplierListComponentProps> = ({ suppliers, isLoading, isAdmin, setIsAddingSupplier, onStatusChange }) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Active':
-        return { backgroundColor: '#d1fae5', color: SuccessColor, fontWeight: 600, padding: '4px 8px', borderRadius: '9999px', fontSize: '0.75rem', display: 'inline-block' };
-      case 'On Hold':
-        return { backgroundColor: '#fffbe3', color: '#a16207', fontWeight: 600, padding: '4px 8px', borderRadius: '9999px', fontSize: '0.75rem', display: 'inline-block' };
-      case 'Inactive':
-        return { backgroundColor: '#fee2e2', color: ErrorColor, fontWeight: 600, padding: '4px 8px', borderRadius: '9999px', fontSize: '0.75rem', display: 'inline-block' };
-      default:
-        return {};
+      case 'Active': return { bg: '#d1fae5', text: SuccessColor };
+      case 'On Hold': return { bg: '#fffbe3', text: '#a16207' };
+      case 'Inactive': return { bg: '#fee2e2', text: ErrorColor };
+      default: return { bg: '#f3f4f6', text: '#374151' };
     }
   };
 
   return (
     <>
-      <h1
-        style={{
-          fontSize: '1.875rem', fontWeight: 800, color: '#111827', marginBottom: '2rem',
-          borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem',
-        }}
-      >
-        👥 Registered Suppliers
-      </h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem' }}>
+        <h1 style={{ fontSize: '1.875rem', fontWeight: 800, color: '#111827', margin: 0 }}>
+            👥 Registered Suppliers
+        </h1>
+      </div>
 
       <Card style={{ marginBottom: 0 }}>
         <CardHeader>
@@ -362,7 +351,7 @@ const SupplierListComponent: React.FC<SupplierListComponentProps> = ({ suppliers
             <Table style={{ minWidth: '900px' }}>
               <TableHeader>
                 <TableRow>
-                  {['ID', 'Supplier Name', 'Contact', 'Email', 'Phone', 'Address', 'Inventory Count', 'Status'].map(header => (
+                  {['ID', 'Supplier Name', 'Contact', 'Email', 'Phone', 'Address', 'Status'].map(header => (
                     <TableHead key={header}>
                       {header}
                     </TableHead>
@@ -371,25 +360,45 @@ const SupplierListComponent: React.FC<SupplierListComponentProps> = ({ suppliers
               </TableHeader>
               <TableBody>
                 {suppliers.length > 0 ? (
-                  suppliers.map(supplier => (
-                    <TableRow key={supplier.id}>
-                      <TableCell style={{ fontWeight: 500, color: PrimaryColor }}>{supplier.id}</TableCell>
-                      <TableCell style={{ fontWeight: 600, color: '#111827' }}>{supplier.name}</TableCell>
-                      <TableCell style={{ color: '#4b5563' }}>{supplier.contact_person}</TableCell>
-                      <TableCell style={{ color: PrimaryColor }}>{supplier.email}</TableCell>
-                      <TableCell style={{ color: '#4b5563' }}>{supplier.phone}</TableCell>
-                      <TableCell style={{ color: '#4b5563', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{supplier.address}</TableCell>
-                      <TableCell style={{ fontWeight: 600, color: '#4b5563' }}>{supplier.total_inventory_items}</TableCell>
-                      <TableCell>
-                        <span style={getStatusStyle(supplier.status)}>
-                          {supplier.status}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  suppliers.map(supplier => {
+                    const statusStyle = getStatusColor(supplier.status);
+                    return (
+                        <TableRow key={supplier.id}>
+                        <TableCell style={{ fontWeight: 500, color: PrimaryColor }}>#{supplier.supplierId}</TableCell>
+                        <TableCell style={{ fontWeight: 600, color: '#111827' }}>{supplier.name}</TableCell>
+                        <TableCell style={{ color: '#4b5563' }}>{supplier.contact_person}</TableCell>
+                        <TableCell style={{ color: PrimaryColor }}>{supplier.email}</TableCell>
+                        <TableCell style={{ color: '#4b5563' }}>{supplier.phone}</TableCell>
+                        <TableCell style={{ color: '#4b5563', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{supplier.address}</TableCell>
+                        <TableCell>
+                            <select
+                                value={supplier.status}
+                                onChange={(e) => onStatusChange(supplier.id, e.target.value as any)}
+                                style={{
+                                    backgroundColor: statusStyle.bg,
+                                    color: statusStyle.text,
+                                    fontWeight: 600,
+                                    padding: '4px 8px',
+                                    borderRadius: '9999px',
+                                    fontSize: '0.75rem',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                    appearance: 'none', // removes default arrow in some browsers for badge look
+                                    textAlign: 'center'
+                                }}
+                            >
+                                <option value="Active">Active</option>
+                                <option value="On Hold">On Hold</option>
+                                <option value="Inactive">Inactive</option>
+                            </select>
+                        </TableCell>
+                        </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} style={{ textAlign: 'center', padding: '3rem', fontSize: '1.125rem', color: '#6b7280' }}>
+                    <TableCell colSpan={7} style={{ textAlign: 'center', padding: '3rem', fontSize: '1.125rem', color: '#6b7280' }}>
                       {isLoading ? "Loading suppliers..." : "No suppliers registered. Click 'Add New Supplier' to get started."}
                     </TableCell>
                   </TableRow>
@@ -404,41 +413,46 @@ const SupplierListComponent: React.FC<SupplierListComponentProps> = ({ suppliers
 }
 
 // ===== Main Application Component =====
-export default function SupplierApp() {
-  const isAuthenticated = true
-  const [isAdmin] = useState(true);
+export default function SuppliersPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+        // Simple role check based on previous context, can be improved with custom claims
+        setIsAdmin(true); 
+    }
+  }, [user]);
 
   const showMessage = (type: 'error' | 'success', text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 4000);
   };
 
-  // FIXED: Load suppliers from localStorage
-  const fetchSuppliers = useCallback(() => {
+  // Fetch Suppliers from Firebase
+  useEffect(() => {
     setIsLoading(true);
-    try {
-      const loadedSuppliers = JSON.parse(localStorage.getItem(STORAGE_KEYS.SUPPLIERS) || '[]');
-      console.log('👥 Loaded suppliers from localStorage:', loadedSuppliers);
-      setSuppliers(loadedSuppliers);
-    } catch (err) {
-      console.error("Error loading suppliers:", err);
-      showMessage('error', "Failed to load supplier list.");
-    } finally {
-      setIsLoading(false);
-    }
+    const q = query(collection(db, 'suppliers'), orderBy('supplierId', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const loadedSuppliers = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        })) as Supplier[];
+        setSuppliers(loadedSuppliers);
+        setIsLoading(false);
+    }, (error) => {
+        console.error("Error loading suppliers:", error);
+        showMessage('error', "Failed to load supplier list.");
+        setIsLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchSuppliers();
-    }
-  }, [isAuthenticated, fetchSuppliers]);
-
-  // FIXED: Save new supplier to localStorage
   const handleSaveNewSupplier = async (newSupplierData: NewSupplier) => {
     if (!isAdmin) {
       showMessage('error', "Permission Denied: Only administrators can add new suppliers.");
@@ -447,28 +461,20 @@ export default function SupplierApp() {
 
     setIsLoading(true);
     try {
-      // Get existing suppliers from localStorage
-      const existingSuppliers = JSON.parse(localStorage.getItem(STORAGE_KEYS.SUPPLIERS) || '[]');
-      
-      // Generate new ID
-      const maxId = existingSuppliers.length > 0 
-        ? Math.max(...existingSuppliers.map((s: Supplier) => s.id)) 
+      // Get max ID for readable ID
+      const maxId = suppliers.length > 0 
+        ? Math.max(...suppliers.map(s => s.supplierId || 0)) 
         : 1000;
       
-      const newSupplier: Supplier = {
+      const newSupplier = {
         ...newSupplierData,
-        id: maxId + 1,
-        total_inventory_items: 0
+        supplierId: maxId + 1,
+        total_inventory_items: 0,
+        createdAt: Timestamp.now()
       };
 
-      // Save to localStorage
-      const updatedSuppliers = [...existingSuppliers, newSupplier];
-      localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(updatedSuppliers));
+      await addDoc(collection(db, 'suppliers'), newSupplier);
       
-      console.log('✅ Supplier saved to localStorage:', newSupplier);
-      
-      // Update state
-      setSuppliers(updatedSuppliers);
       setIsAddingSupplier(false);
       showMessage('success', `Supplier '${newSupplierData.name}' added successfully.`);
     } catch (err) {
@@ -479,7 +485,16 @@ export default function SupplierApp() {
     }
   }
 
-  if (!isAuthenticated) return <div style={{ textAlign: 'center', padding: '3rem', fontSize: '1.125rem', color: '#ef4444' }}>Redirecting to login... (Simulated)</div>
+  const handleStatusChange = async (id: string, newStatus: Supplier['status']) => {
+      try {
+          const supplierRef = doc(db, 'suppliers', id);
+          await updateDoc(supplierRef, { status: newStatus });
+          showMessage('success', "Supplier status updated.");
+      } catch (err) {
+          console.error("Error updating status:", err);
+          showMessage('error', "Failed to update status.");
+      }
+  };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: LightBg, fontFamily: 'Inter, sans-serif' }}>
@@ -488,16 +503,20 @@ export default function SupplierApp() {
         <Button
           variant="default"
           style={{ backgroundColor: 'transparent', color: PrimaryColor, borderWidth: '1px', borderStyle: 'solid', borderColor: '#ccc' }}
-          onClick={() => window.history.back()}
+          onClick={() => navigate(-1)}
         >
           ← Back
         </Button>
-        <Button variant="destructive" onClick={() => {
-          localStorage.removeItem("currentUser");
-          window.location.href = "/login";
-        }}>
-          Logout (Mock)
-        </Button>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+             <Button variant="ghost" onClick={() => navigate('/admin/supplier-ledger')}>
+                 View Ledger
+             </Button>
+            <Button variant="destructive" onClick={() => {
+            navigate("/login");
+            }}>
+            Logout
+            </Button>
+        </div>
       </nav>
 
       {/* Main Content */}
@@ -517,6 +536,7 @@ export default function SupplierApp() {
           isLoading={isLoading}
           isAdmin={isAdmin}
           setIsAddingSupplier={setIsAddingSupplier}
+          onStatusChange={handleStatusChange}
         />
       </main>
 

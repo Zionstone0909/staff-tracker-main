@@ -8,14 +8,12 @@ import {
   getFirestore, collection, query, onSnapshot, where, orderBy, limit,
   Timestamp, DocumentData, CollectionReference
 } from 'firebase/firestore';
-import { setLogLevel } from 'firebase/firestore';
 import { 
   ShoppingCart, TrendingUp, Clock, CheckCircle, Package, AlertTriangle, 
   DollarSign, Users, TrendingDown, Bell, X 
 } from "lucide-react";
 
 // ========== FIREBASE CONFIGURATION & SETUP ==========
-setLogLevel('debug');
 
 declare const __app_id: string;
 declare const __firebase_config: string;
@@ -148,6 +146,7 @@ const Button: React.FC<ButtonProps> = ({ children, onClick, style }) => (
       display: 'flex',
       alignItems: 'center',
       gap: '0.5rem',
+      justifyContent: 'center',
       ...style,
     }}
   >
@@ -331,7 +330,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const windowWidth = useWindowWidth();
   
-  const [loading, setLoading] = useState(true);
+  // No blocking loading state for data to ensure faster perceived load
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -387,10 +386,8 @@ export default function AdminDashboard() {
         ...d.data()
       } as Customer));
       setCustomers(customersData);
-      setLoading(false);
     }, (err) => {
       console.error('Error fetching customers:', err);
-      setLoading(false);
     });
 
     return () => {
@@ -470,7 +467,8 @@ export default function AdminDashboard() {
   };
 
   // ========== LOADING STATE ==========
-  if (!initialized || loading) {
+  // Only block for auth initialization, not data fetching
+  if (!initialized) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: LightBg }}>
         <div style={{ textAlign: 'center' }}>
@@ -486,7 +484,7 @@ export default function AdminDashboard() {
             borderColor: PrimaryColor, 
             margin: '0 auto 1rem' 
           }}></div>
-          <p style={{ color: MutedColor, fontSize: 18, fontWeight: 600 }}>Loading dashboard...</p>
+          <p style={{ color: MutedColor, fontSize: 18, fontWeight: 600 }}>Loading...</p>
           <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
@@ -516,11 +514,12 @@ export default function AdminDashboard() {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          flexDirection: isSmallScreen ? "column" : "row",
+          // Use column-reverse on small screens to place Logout above title
+          flexDirection: isSmallScreen ? "column-reverse" : "row",
           gap: isSmallScreen ? "1rem" : "0",
         }}
       >
-        <div>
+        <div style={{ width: isSmallScreen ? "100%" : "auto" }}>
           <h1
             style={{
               fontSize: isSmallScreen ? "1.5rem" : "1.875rem",
@@ -536,7 +535,14 @@ export default function AdminDashboard() {
             Welcome back, {user?.email || 'Administrator'}
           </p>
         </div>
-        <Button onClick={handleLogout} style={{ width: isSmallScreen ? "100%" : "auto" }}>
+        <Button 
+          onClick={handleLogout} 
+          style={{ 
+            width: isSmallScreen ? "25%" : "auto", 
+            justifyContent: 'center',
+            alignSelf: isSmallScreen ? "flex-end" : "auto" 
+          }}
+        >
           <TrendingDown size={16} />
           Logout
         </Button>

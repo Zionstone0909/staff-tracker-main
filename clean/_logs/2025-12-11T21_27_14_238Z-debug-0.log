@@ -7,8 +7,8 @@
 6 silly config load:file:C:\Users\HP\AppData\Roaming\npm\etc\npmrc
 7 verbose title npm run build
 8 verbose argv "run" "build"
-9 verbose logfile logs-max:10 dir:C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-12-09T17_01_33_624Z-
-10 verbose logfile C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-12-09T17_01_33_624Z-debug-0.log
+9 verbose logfile logs-max:10 dir:C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-12-11T21_27_14_238Z-
+10 verbose logfile C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-12-11T21_27_14_238Z-debug-0.log
 11 silly logfile start cleaning logs, removing 1 files
 12 silly logfile done cleaning log files
 13 verbose cwd C:\Users\HP\Videos\staff-tracker-main

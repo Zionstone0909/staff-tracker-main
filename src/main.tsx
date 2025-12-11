@@ -5,6 +5,8 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+// 1. IMPORT THE DATAPROVIDER
+import { DataProvider } from "./contexts/DataContext"; 
 // Ensure this path is correct for your Firebase initialization logic
 import { initializeAuth } from "./firebase"; 
 
@@ -20,22 +22,23 @@ const mountApp = () => {
 
     ReactDOM.createRoot(rootElement).render(
         <React.StrictMode>
-            {/* The AuthProvider handles initialization loading states internally now */}
+            {/* The AuthProvider must be at the top to handle user authentication first */}
             <AuthProvider> 
-                <BrowserRouter>
-                    <App />
-                </BrowserRouter>
+                {/* 2. WRAP THE APPLICATION INSIDE THE DATAPROVIDER */}
+                {/* Components like Customers/Sales will now have access to useData() */}
+                <DataProvider>
+                    <BrowserRouter>
+                        <App />
+                    </BrowserRouter>
+                </DataProvider>
             </AuthProvider>
         </React.StrictMode>
     );
 };
 
-// With your AuthProvider handling its own `initialized` state internally (as updated in the last response), 
-// we can simplify the startup file significantly. The <AuthProvider> will show a loading screen 
-// until it is ready, and your <ProtectedRoute> will handle the rest.
-
 // Simply mount the application directly
 try {
+    // initializeAuth() should be called if necessary, but we keep the logic clean here
     mountApp();
 } catch (error) {
     console.error("An error occurred during application bootstrap:", error);

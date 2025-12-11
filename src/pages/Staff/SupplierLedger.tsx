@@ -1,648 +1,473 @@
-import React, { useState, ChangeEvent } from 'react';
+"use client"
+import React, { useState, useEffect, ChangeEvent, PropsWithChildren, CSSProperties, useMemo, FormEvent } from 'react';
+// Note: Assuming 'db' and other functions are correctly exported from '../../firebase'
+import { db } from '../../firebase';
+import { 
+  collection, query, orderBy, onSnapshot, doc, runTransaction, 
+  Timestamp, where, getDocs, increment 
+} from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { Trash2, Search, Edit, ArrowLeft, Save, Loader2 } from 'lucide-react';
 
-// --- Inline SVG Definitions for Icons (FIXED) ---
+// --- STYLING CONSTANTS (Matched to BankDeposit Theme) ---
+const PrimaryColor = '#0B3D91';
+const DestructiveColor = '#dc2626';
+const MutedColor = '#6b7280';
+const LightBg = '#f3f4f6';
 
-const IconPlus = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M5 12h14" />
-    <path d="M12 5v14" />
-  </svg>
+// --- UI COMPONENTS ---
+// Reusing/adapting the structure and style from BankDeposit.tsx source 
+const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'ghost' | 'destructive' | 'icon' }> = ({ children, onClick, style, disabled, type = 'button', variant = 'default', ...props }) => {
+    let backgroundColor = PrimaryColor;
+    let color = 'white';
+    let border = 'none';
+    let padding = '0.5rem 1rem';
+    
+    if (variant === 'ghost') {
+        backgroundColor = 'transparent';
+        color = PrimaryColor;
+        border = '1px solid #ccc';
+    } else if (variant === 'destructive') {
+        backgroundColor = DestructiveColor;
+    } else if (variant === 'icon') {
+        backgroundColor = 'transparent';
+        color = MutedColor;
+        padding = '0.2rem';
+        border = 'none';
+    }
+
+    const baseStyle: CSSProperties = {
+        padding,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        // Use the passed style's backgroundColor first, then derived, then disabled gray
+        backgroundColor: disabled ? '#ccc' : (style?.backgroundColor || backgroundColor),
+        color: color,
+        border: border,
+        borderRadius: '4px',
+        fontWeight: '500',
+        transition: 'background-color 0.2s, opacity 0.2s',
+        opacity: disabled ? 0.6 : 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.5rem',
+        ...style
+    };
+
+    return (
+        <button 
+            onClick={onClick} 
+            style={baseStyle} 
+            disabled={disabled} 
+            type={type} 
+            {...props}
+        >
+            {children}
+        </button>
+    );
+};
+
+const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
+    <input {...props} style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px', width: '100%', boxSizing: 'border-box', height: 40, ...props.style }} /> 
 );
 
-const IconEdit = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-    <path d="M15 5l4 4" />
-  </svg>
+const Card: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => (
+    <div style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '1rem', marginBottom: '1rem', backgroundColor: '#fff', ...style }}> 
+        {children}
+    </div>
 );
 
-const IconTrash2 = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 6h18" />
-    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-    <line x1="10" x2="10" y1="11" y2="17" />
-    <line x1="14" x2="14" y1="11" y2="17" />
-  </svg>
+const CardHeader: React.FC<PropsWithChildren> = ({ children }) => <div style={{ marginBottom: '0.5rem' }}>{children}</div>; 
+const CardTitle: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0, ...style }}>{children}</h2>; 
+const CardContent: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <div style={{ paddingTop: '0.5rem', ...style }}>{children}</div>; 
+
+const Table: React.FC<PropsWithChildren> = ({ children }) => <table style={{ width: '100%', borderCollapse: 'collapse' }}>{children}</table>; 
+const TableHeader: React.FC<PropsWithChildren> = ({ children }) => <thead>{children}</thead>; 
+const TableBody: React.FC<PropsWithChildren> = ({ children }) => <tbody>{children}</tbody>; 
+const TableRow: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => <tr style={{ borderBottom: '1px solid #eee', ...style }}>{children}</tr>; 
+const TableHead: React.FC<PropsWithChildren & { style?: CSSProperties }> = ({ children, style }) => (
+    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 'bold', borderBottom: '2px solid #ccc', ...style }}>{children}</th> 
 );
-
-const IconSearch = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8" />
-    <path d="m21 21-4.3-4.3" />
-  </svg>
-);
+const TableCell: React.FC<PropsWithChildren & { colSpan?: number, style?: CSSProperties }> = ({ children, style, colSpan }) => <td colSpan={colSpan} style={{ padding: '0.75rem', verticalAlign: 'middle', ...style }}>{children}</td>; 
 
 
-// --- Type Definitions ---
+// --- LOGIC & TYPES ---
+
 interface SupplierLedgerEntry {
-  id: string;
-  supplier_id: string;
-  goods_received: string; 
-  quantity: number;
-  amount_owed: number;
-  amount_paid: number;
-  transaction_date: string;
+  id: string;
+  supplier_id: string;
+  goods_received: string; 
+  quantity: number;
+  amount_owed: number;
+  amount_paid: number;
+  transaction_date: string;
+  timestamp?: Timestamp;
 }
 
 interface FormState {
-  supplier_id: string;
-  goods_received: string;
-  quantity: number | '';
-  amount_owed: number | '';
-  amount_paid: number | '';
-  transaction_date: string;
+  supplier_id: string;
+  goods_received: string;
+  quantity: number | '';
+  amount_owed: number | '';
+  amount_paid: number | '';
+  transaction_date: string;
 }
-
-// --- Stub Component Interfaces & Implementations ---
-
-interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode;
-  style?: React.CSSProperties; 
-}
-
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  children: React.ReactNode;
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; 
-  variant?: 'default' | 'primary' | 'destructive';
-  size?: 'sm' | 'md' | 'lg';
-  style?: React.CSSProperties; 
-}
-
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  value: string | number;
-  onChange: (e: ChangeEvent<HTMLInputElement>) => void;
-  placeholder: string;
-  style?: React.CSSProperties; 
-}
-
-
-// Simplified Card components using inline styles
-const Card = ({ children, style = {}, ...props }: CardProps) => (
-  <div
-    style={{
-      backgroundColor: 'white',
-      padding: '32px', 
-      borderRadius: '16px', 
-      boxShadow: '0 8px 16px -4px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)', 
-      border: '1px solid #e5e7eb', 
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </div>
-);
-const CardHeader = ({ children, style = {}, ...props }: CardProps) => (
-  <div
-    style={{
-      display: 'flex',
-      flexDirection: 'column',
-      marginBottom: '16px', 
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </div>
-);
-const CardTitle = ({ children, style = {}, ...props }: CardProps) => (
-  <h3
-    style={{
-      fontSize: '1.5rem', 
-      fontWeight: '700',
-      lineHeight: '1.2',
-      color: '#1f2937', 
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </h3>
-);
-const CardDescription = ({ children, style = {}, ...props }: CardProps) => (
-  <p
-    style={{
-      fontSize: '1rem', 
-      color: '#6b7280', 
-      marginTop: '4px',
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </p>
-);
-const CardContent = ({ children, style = {}, ...props }: CardProps) => (
-  <div
-    style={{
-      paddingTop: '8px', 
-      ...style
-    }}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
-const Button = ({ children, onClick, variant = 'default', size = 'md', style = {}, ...props }: ButtonProps) => {
-  const baseStyle: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '10px', 
-    fontWeight: '600',
-    transition: 'background-color 0.15s ease, transform 0.1s ease',
-    cursor: 'pointer',
-    outline: 'none',
-    boxShadow: '0 2px 4px 0 rgba(0,0,0,0.1)',
-    ...style
-  };
-
-  let variantStyle: React.CSSProperties;
-  if (variant === 'primary') {
-    variantStyle = {
-      backgroundColor: '#4f46e5', 
-      color: 'white',
-    };
-  } else if (variant === 'destructive') {
-    variantStyle = {
-      backgroundColor: '#dc2626', 
-      color: 'white',
-    };
-  } else { // default
-    variantStyle = {
-      backgroundColor: 'white', 
-      color: '#1f2937', 
-      border: '1px solid #d1d5db', 
-    };
-  }
-
-  let sizeStyle: React.CSSProperties;
-  if (size === 'sm') {
-    sizeStyle = { height: '36px', padding: '0 14px', fontSize: '0.875rem' };
-  } else if (size === 'lg') {
-    sizeStyle = { height: '52px', padding: '0 36px', fontSize: '1.125rem' };
-  } else { // 'md'
-    sizeStyle = { height: '44px', padding: '0 20px', fontSize: '1rem' }; 
-  }
-
-  return (
-    <button
-      style={{ ...baseStyle, ...variantStyle, ...sizeStyle }}
-      onClick={onClick}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-};
-
-const Input = ({ type = 'text', value, onChange, placeholder, style = {}, ...props }: InputProps) => {
-  const inputBaseStyle: React.CSSProperties = {
-    display: 'flex',
-    height: '44px', 
-    width: '100%',
-    borderRadius: '10px',
-    border: '1px solid #d1d5db', 
-    backgroundColor: 'white',
-    padding: '10px 14px', 
-    fontSize: '1rem', 
-    color: '#1f2937', 
-    outline: 'none',
-    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.03)', 
-    transition: 'border-color 0.15s ease-in-out',
-    ...style
-  };
-
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      style={inputBaseStyle}
-      {...props}
-    />
-  );
-};
-
-
-// --- Main Component Data & Logic (Unchanged) ---
 
 const initialFormState: FormState = {
-  supplier_id: '',
-  goods_received: '',
-  quantity: '',
-  amount_owed: '',
-  amount_paid: '',
-  transaction_date: new Date().toISOString().substring(0, 10),
+  supplier_id: '',
+  goods_received: '',
+  quantity: '',
+  amount_owed: '',
+  amount_paid: '',
+  transaction_date: new Date().toISOString().substring(0, 10),
 };
 
-const DUMMY_DATA: SupplierLedgerEntry[] = [
-  { id: '1', supplier_id: 'SUP001', goods_received: 'Raw Steel', quantity: 100, amount_owed: 5000, amount_paid: 2000, transaction_date: '2024-10-15' },
-  { id: '2', supplier_id: 'SUP002', goods_received: 'Plastic Pellets', quantity: 500, amount_owed: 1500, amount_paid: 1500, transaction_date: '2024-11-01' },
-];
-
 const SupplierLedger: React.FC = () => {
-  const [entries, setEntries] = useState<SupplierLedgerEntry[]>(DUMMY_DATA);
-  const [formState, setFormState] = useState<FormState>(initialFormState);
-  const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const navigate = useNavigate();
+  const [entries, setEntries] = useState<SupplierLedgerEntry[]>([]);
+  const [formState, setFormState] = useState<FormState>(initialFormState);
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [loading, setLoading] = useState(false);
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type } = e.target;
-    setFormState(prev => ({
-      ...prev,
-      [name]: type === 'number' ? parseFloat(value) || '' : value,
-    }));
-  };
+  // Fetch Entries
+  useEffect(() => {
+    const q = query(collection(db, 'supplier_ledger'), orderBy('transaction_date', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as SupplierLedgerEntry[];
+      setEntries(data);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  const handleAddOrUpdateEntry = async () => {
-    if (!formState.supplier_id || !formState.goods_received || formState.quantity === '' || formState.amount_owed === '') {
-      console.error("Please fill in all required fields.");
-      return;
-    }
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type } = e.target;
+    setFormState(prev => ({
+      ...prev,
+      [name]: type === 'number' ? parseFloat(value) || '' : value,
+    }));
+  };
 
-    const newEntry: SupplierLedgerEntry = {
-      id: currentEntryId || String(Date.now()),
-      supplier_id: formState.supplier_id,
-      goods_received: formState.goods_received,
-      quantity: Number(formState.quantity),
-      amount_owed: Number(formState.amount_owed),
-      amount_paid: Number(formState.amount_paid) || 0,
-      transaction_date: formState.transaction_date,
-    };
+  const handleClearForm = () => {
+    setFormState(initialFormState);
+    setIsEditing(false);
+    setCurrentEntryId(null);
+  };
 
-    if (isEditing && currentEntryId) {
-      setEntries(entries.map(e => e.id === currentEntryId ? newEntry : e));
-      console.log('Entry updated:', newEntry);
-    } else {
-      setEntries([...entries, newEntry]);
-      console.log('New entry added:', newEntry);
-    }
+  const handleAddOrUpdateEntry = async (e: FormEvent) => {
+    e.preventDefault();
+    
+    if (!formState.supplier_id || !formState.goods_received || formState.quantity === '' || formState.amount_owed === '') {
+      alert("Please fill in all required fields: Supplier ID, Goods, Quantity, and Amount Owed.");
+      return;
+    }
 
-    setFormState(initialFormState);
-    setIsEditing(false);
-    setCurrentEntryId(null);
-  };
+    setLoading(true);
 
-  const handleEdit = (entry: SupplierLedgerEntry) => {
-    setFormState({
-      supplier_id: entry.supplier_id,
-      goods_received: entry.goods_received,
-      quantity: entry.quantity,
-      amount_owed: entry.amount_owed,
-      amount_paid: entry.amount_paid,
-      transaction_date: entry.transaction_date,
-    });
-    setCurrentEntryId(entry.id);
-    setIsEditing(true);
-  };
+    try {
+      const inventoryQuery = query(collection(db, 'inventory'), where('name', '==', formState.goods_received));
+      const inventorySnap = await getDocs(inventoryQuery);
+      let inventoryDocId: string | null = null;
+      
+      if (!inventorySnap.empty) {
+        inventoryDocId = inventorySnap.docs[0].id;
+      }
 
-  const handleDelete = (id: string) => {
-    setEntries(entries.filter(e => e.id !== id));
-    console.log(`Entry ${id} deleted.`);
-  };
+      await runTransaction(db, async (transaction) => {
+        const ledgerRef = isEditing && currentEntryId 
+            ? doc(db, 'supplier_ledger', currentEntryId)
+            : doc(collection(db, 'supplier_ledger'));
+        
+        const invRef = inventoryDocId 
+            ? doc(db, 'inventory', inventoryDocId) 
+            : doc(collection(db, 'inventory'));
 
-  const handleClearForm = () => {
-    setFormState(initialFormState);
-    setIsEditing(false);
-    setCurrentEntryId(null);
-  };
+        let quantityChange = Number(formState.quantity);
+        if (isEditing && currentEntryId) {
+            const currentLedgerDoc = await transaction.get(ledgerRef);
+            if (!currentLedgerDoc.exists()) throw new Error("Ledger entry not found");
+            const oldQuantity = currentLedgerDoc.data().quantity || 0;
+            quantityChange = Number(formState.quantity) - oldQuantity;
+        }
 
-  const filteredEntries = entries.filter(entry =>
-    entry.supplier_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.goods_received.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+        transaction.set(ledgerRef, {
+            supplier_id: formState.supplier_id,
+            goods_received: formState.goods_received,
+            quantity: Number(formState.quantity),
+            amount_owed: Number(formState.amount_owed),
+            amount_paid: Number(formState.amount_paid) || 0,
+            transaction_date: formState.transaction_date,
+            timestamp: Timestamp.now()
+        }, { merge: true });
 
-  const calculateTotals = () => {
-    return entries.reduce(
-      (acc, entry) => {
-        acc.totalOwed += entry.amount_owed;
-        acc.totalPaid += entry.amount_paid;
-        return acc;
-      },
-      { totalOwed: 0, totalPaid: 0 }
-    );
-  };
+        // Update Inventory stock
+        if (inventoryDocId) {
+            transaction.update(invRef, {
+                units_available: increment(quantityChange)
+            });
+        } else {
+            // Create new inventory item if not found
+            transaction.set(invRef, {
+                name: formState.goods_received,
+                units_available: Number(formState.quantity),
+                unit_price: 0, // Default for new item
+                sku: '', // Default for new item
+                category: 'General', // Default for new item
+                created_at: Timestamp.now()
+            });
+        }
+      });
 
-  const { totalOwed, totalPaid } = calculateTotals();
-  const balance = totalOwed - totalPaid;
+      handleClearForm();
+    } catch (error) {
+      console.error("Error saving entry:", error);
+      alert("Failed to save entry. Check console for details.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // --- Layout with Fixed Alignment ---
+  const handleEdit = (entry: SupplierLedgerEntry) => {
+    setFormState({
+      supplier_id: entry.supplier_id,
+      goods_received: entry.goods_received,
+      quantity: entry.quantity,
+      amount_owed: entry.amount_owed,
+      amount_paid: entry.amount_paid,
+      transaction_date: entry.transaction_date,
+    });
+    setCurrentEntryId(entry.id);
+    setIsEditing(true);
+    // Smoothly scroll to the top of the page (where the form is)
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-  // Custom function to determine text alignment for table columns
-  const getHeaderAlignment = (index: number) => {
-    // 0: Date (Left), 1: Supplier ID (Left), 2: Goods (Left)
-    if (index < 3) return 'left';
-    // 3: Quantity, 4: Owed ($), 5: Paid ($), 6: Balance ($)
-    if (index < 7) return 'right';
-    // 7: Actions (Centered for visual balance with icon buttons)
-    return 'center';
-  };
+  const handleDelete = async (id: string, entryQuantity: number, goodsName: string) => {
+    if(!window.confirm("Are you sure? Deleting this entry will deduct the associated stock from inventory. This action cannot be undone.")) return;
+    setLoading(true);
+    try {
+        const inventoryQuery = query(collection(db, 'inventory'), where('name', '==', goodsName));
+        const inventorySnap = await getDocs(inventoryQuery);
+        
+        await runTransaction(db, async (transaction) => {
+             const ledgerRef = doc(db, 'supplier_ledger', id);
+             // Delete the ledger entry
+             transaction.delete(ledgerRef);
+
+             // Deduct stock from inventory
+             if (!inventorySnap.empty) {
+                 const invRef = doc(db, 'inventory', inventorySnap.docs[0].id);
+                 transaction.update(invRef, {
+                     units_available: increment(-entryQuantity)
+                 });
+             }
+        });
+    } catch (error) {
+        console.error("Error deleting:", error);
+        alert("Delete failed. Check console for details.");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter(entry =>
+        entry.supplier_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        entry.goods_received.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [entries, searchTerm]);
+
+  const { totalOwed, totalPaid, balance } = useMemo(() => {
+    const totals = entries.reduce(
+      (acc, entry) => {
+        acc.totalOwed += entry.amount_owed;
+        acc.totalPaid += entry.amount_paid;
+        return acc;
+      },
+      { totalOwed: 0, totalPaid: 0 }
+    );
+    return { ...totals, balance: totals.totalOwed - totals.totalPaid };
+  }, [entries]);
   
-  const getCellAlignment = (index: number) => {
-    // 0: Date (Left), 1: Supplier ID (Left), 2: Goods (Left)
-    if (index < 3) return 'left';
-    // 3: Quantity, 4: Owed ($), 5: Paid ($), 6: Balance ($)
-    if (index < 7) return 'right';
-    // 7: Actions 
-    return 'initial';
-  };
+  // Helper to format currency (assuming USD for non-NGN context, using toFixed for display)
+  const formatDollar = (amount: number) => `$${amount.toFixed(2)}`;
 
+  // --- RENDER ---
+  return (
+    <div style={{ minHeight: '100vh', backgroundColor: LightBg, fontFamily: 'Arial, sans-serif' }}> 
+        {/* NAV BAR */}
+        <nav style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}> 
+            <Button 
+                variant="ghost" 
+                onClick={() => navigate(-1)} 
+                style={{ backgroundColor: 'transparent', color: PrimaryColor, border: '1px solid #ccc' }} 
+            >
+                <ArrowLeft size={16} /> Back
+            </Button>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: PrimaryColor }}>
+                Supplier Ledger
+            </h1>
+            <div>{/* Spacer for alignment */}</div>
+        </nav>
 
-  return (
-    <div
-      style={{
-        backgroundColor: '#f9fafb', 
-        minHeight: '100vh',
-        fontFamily: 'Inter, sans-serif',
-      }}
-    >
-      {/* Centered Content Container */}
-      <div
-        style={{
-          maxWidth: '1200px', 
-          margin: '0 auto', 
-          padding: '40px 24px', 
-        }}
-      >
-        <h1
-          style={{
-            fontSize: '2.5rem', 
-            fontWeight: '800', 
-            marginBottom: '40px', 
-            color: '#111827', 
-          }}
-        >
-          Supplier Ledger Dashboard
-        </h1>
+        <main style={{ maxWidth: '80rem', margin: '0 auto', padding: '2rem 1rem' }}> 
+            
+            {/* SUMMARY CARDS */}
+            <Card style={{ backgroundColor: '#e3f2fd', marginBottom: '2rem' }}>
+                <CardTitle style={{ fontSize: '1.25rem', marginBottom: '1rem', color: PrimaryColor }}>
+                    📊 Financial Summary
+                </CardTitle>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
+                    <Card style={{ padding: '1.5rem', backgroundColor: '#fff', border: '1px solid #ccc', marginBottom: 0 }}>
+                        <div style={{ fontSize: '0.875rem', color: MutedColor, marginBottom: '0.5rem' }}>Total Amount Owed</div>
+                        <div style={{ fontSize: '2rem', fontWeight: '700', color: DestructiveColor }}>
+                            {formatDollar(totalOwed)}
+                        </div>
+                    </Card>
 
-        {/* Summary Cards */}
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '30px', 
-            marginBottom: '50px', 
-            justifyContent: 'space-between',
-          }}
-        >
-          {/* Card 1: Total Amount Owed */}
-          <Card
-            style={{
-              flex: '1 1 300px', 
-              minWidth: '280px', 
-              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-            }}
-          >
-            <CardHeader>
-              <CardTitle>Total Amount Owed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p
-                style={{
-                  fontSize: '2.25rem', 
-                  fontWeight: '700', 
-                  marginTop: '12px', 
-                  color: '#ef4444', 
-                }}
-              >
-                ${totalOwed.toFixed(2)}
-              </p>
-            </CardContent>
-          </Card>
+                    <Card style={{ padding: '1.5rem', backgroundColor: '#fff', border: '1px solid #ccc', marginBottom: 0 }}>
+                        <div style={{ fontSize: '0.875rem', color: MutedColor, marginBottom: '0.5rem' }}>Total Amount Paid</div>
+                        <div style={{ fontSize: '2rem', fontWeight: '700', color: '#10b981' }}>
+                            {formatDollar(totalPaid)}
+                        </div>
+                    </Card>
 
-          {/* Card 2: Total Amount Paid */}
-          <Card
-            style={{
-              flex: '1 1 300px', 
-              minWidth: '280px',
-              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-            }}
-          >
-            <CardHeader>
-              <CardTitle>Total Amount Paid</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p
-                style={{
-                  fontSize: '2.25rem',
-                  fontWeight: '700',
-                  marginTop: '12px',
-                  color: '#10b981', 
-                }}
-              >
-                ${totalPaid.toFixed(2)}
-              </p>
-            </CardContent>
-          </Card>
+                    <Card style={{ padding: '1.5rem', backgroundColor: '#fff', border: '1px solid #ccc', marginBottom: 0 }}>
+                        <div style={{ fontSize: '0.875rem', color: MutedColor, marginBottom: '0.5rem' }}>Net Balance</div>
+                        <div style={{ fontSize: '2rem', fontWeight: '700', color: balance > 0 ? DestructiveColor : PrimaryColor }}>
+                            {formatDollar(balance)}
+                        </div>
+                    </Card>
+                </div>
+            </Card>
 
-          {/* Card 3: Net Balance */}
-          <Card
-            style={{
-              flex: '1 1 300px', 
-              minWidth: '280px',
-              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-            }}
-          >
-            <CardHeader>
-              <CardTitle>Net Balance</CardTitle>
-              <CardDescription>Owed - Paid</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p
-                style={{
-                  fontSize: '2.25rem',
-                  fontWeight: '700',
-                  marginTop: '12px',
-                  color: balance > 0 ? '#ef4444' : '#4f46e5',
-                }}
-              >
-                ${balance.toFixed(2)}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+            {/* FORM CARD */}
+            <Card style={{ marginBottom: '2rem' }}> 
+                <CardHeader> 
+                    <CardTitle>{isEditing ? 'Edit Ledger Entry' : 'Add New Entry'}</CardTitle>
+                    <div style={{ fontSize: '0.875rem', color: MutedColor, marginTop: '0.25rem' }}>
+                        {isEditing ? 'Updating this entry will adjust inventory stock.' : 'Adding an entry will automatically increase inventory stock.'}
+                    </div>
+                </CardHeader>
+                <CardContent style={{ padding: '0.5rem 0 0 0' }}> 
+                    <form onSubmit={handleAddOrUpdateEntry} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}> 
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}> 
+                            {/* Input fields */}
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', fontWeight: '500' }}>Supplier ID</label>
+                                <Input name="supplier_id" placeholder="SUP-001" value={formState.supplier_id} onChange={handleChange} disabled={loading} required />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', fontWeight: '500' }}>Goods Received</label>
+                                <Input name="goods_received" placeholder="Item Name (Exact Match)" value={formState.goods_received} onChange={handleChange} disabled={loading} required />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', fontWeight: '500' }}>Quantity</label>
+                                <Input name="quantity" type="number" placeholder="0" value={formState.quantity} onChange={handleChange} disabled={loading} required min="0" />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', fontWeight: '500' }}>Amount Owed ($)</label>
+                                <Input name="amount_owed" type="number" placeholder="0.00" value={formState.amount_owed} onChange={handleChange} disabled={loading} required min="0" step="0.01" />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', fontWeight: '500' }}>Amount Paid ($)</label>
+                                <Input name="amount_paid" type="number" placeholder="0.00" value={formState.amount_paid} onChange={handleChange} disabled={loading} min="0" step="0.01" />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', fontWeight: '500' }}>Transaction Date</label>
+                                <Input name="transaction_date" type="date" value={formState.transaction_date} onChange={handleChange} disabled={loading} required />
+                            </div>
+                          </div>
+                         
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
+                            <Button type="button" variant="ghost" onClick={handleClearForm} disabled={loading}>
+                                Cancel / Clear
+                            </Button>
+                            <Button type="submit" disabled={loading}> 
+                                {loading ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={16} />}
+                                {isEditing ? 'Update Entry' : 'Save Entry'}
+                            </Button>
+                        </div>
+                    </form>
+                </CardContent>
+            </Card>
 
-        {/* Entry Form */}
-        <Card
-          style={{
-            marginBottom: '50px', 
-            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', 
-          }}
-        >
-          <CardHeader>
-            <CardTitle>{isEditing ? 'Edit Ledger Entry' : 'Add New Ledger Entry'}</CardTitle>
-            <CardDescription>
-              {isEditing ? 'Modify the details of the selected transaction.' : 'Enter details for a new goods received/payment transaction.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* Form Inputs - Clean 2-column grid */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-                gap: '30px', 
-              }}
-            >
-              {[
-                { id: 'supplier_id', label: 'Supplier ID', name: 'supplier_id', placeholder: 'SUP-XXX (Required)', type: 'text', value: formState.supplier_id },
-                { id: 'goods_received', label: 'Goods Received', name: 'goods_received', placeholder: 'E.g., Steel, Plastic (Required)', type: 'text', value: formState.goods_received },
-                { id: 'quantity', label: 'Quantity', name: 'quantity', placeholder: '0 (Required)', type: 'number', value: formState.quantity },
-                { id: 'amount_owed', label: 'Amount Owed ($)', name: 'amount_owed', placeholder: '0.00 (Required)', type: 'number', value: formState.amount_owed },
-                { id: 'amount_paid', label: 'Amount Paid ($)', name: 'amount_paid', placeholder: '0.00', type: 'number', value: formState.amount_paid },
-                { id: 'transaction_date', label: 'Date', name: 'transaction_date', placeholder: '', type: 'date', value: formState.transaction_date },
-              ].map(field => (
-                <div key={field.id} style={{ marginBottom: '0' }}>
-                  <label htmlFor={field.id} style={{ fontSize: '0.9rem', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '10px' }}> 
-                    {field.label}
-                  </label>
-                  <Input
-                    id={field.id}
-                    name={field.name}
-                    type={field.type}
-                    placeholder={field.placeholder}
-                    value={field.value}
-                    onChange={handleChange}
-                  />
-                </div>
-              ))}
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '20px', 
-                marginTop: '40px', 
-              }}
-            >
-              <Button variant="default" size="md" onClick={handleClearForm} disabled={!isEditing && !currentEntryId}>
-                Clear
-              </Button>
-              <Button variant="primary" size="md" onClick={() => handleAddOrUpdateEntry()}>
-                <IconPlus style={{ width: '16px', height: '16px', marginRight: '8px' }} /> {/* Icon Plus */}
-                {isEditing ? 'Update Entry' : 'Add Entry'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+            {/* TABLE CARD */}
+            <Card> 
+                <CardHeader>
+                    <CardTitle>Transaction History</CardTitle>
+                </CardHeader>
+                <CardContent> 
+                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', alignItems: 'center' }}>
+                        <div style={{ position: 'relative', flexGrow: 1, maxWidth: '400px' }}>
+                            <Input
+                                type="text"
+                                placeholder="Search Supplier ID or Goods..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                style={{ paddingLeft: '2.5rem' }} 
+                            />
+                            <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: MutedColor }} />
+                        </div>
+                    </div>
 
+                    <div style={{ overflowX: 'auto' }}> 
+                        <Table> 
+                            <TableHeader> 
+                                <TableRow> 
+                                    <TableHead>Date</TableHead> 
+                                    <TableHead style={{ backgroundColor: '#e0f7fa' }}>Supplier</TableHead> {/* ADDED STYLE */}
+                                    <TableHead>Goods</TableHead>
+                                    <TableHead style={{ textAlign: 'center' }}>Qty</TableHead>
+                                    <TableHead style={{ textAlign: 'right' }}>Owed ($)</TableHead>
+                                    <TableHead style={{ textAlign: 'right' }}>Paid ($)</TableHead>
+                                    <TableHead style={{ textAlign: 'right' }}>Balance ($)</TableHead>
+                                    <TableHead style={{ textAlign: 'center' }}>Actions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody> 
+                                {filteredEntries.length > 0 ? (
+                                    filteredEntries.map((entry) => (
+                                        <TableRow key={entry.id}> 
+                                            <TableCell>{entry.transaction_date}</TableCell>
+                                            <TableCell style={{ fontWeight: '700', color: PrimaryColor, backgroundColor: '#f5f5f5' }}>{entry.supplier_id}</TableCell> {/* ADDED STYLE */}
+                                            <TableCell>{entry.goods_received}</TableCell>
+                                            <TableCell style={{ textAlign: 'center' }}>{entry.quantity}</TableCell>
+                                            <TableCell style={{ textAlign: 'right', color: DestructiveColor }}>{formatDollar(entry.amount_owed)}</TableCell>
+                                            <TableCell style={{ textAlign: 'right', color: '#10b981' }}>{formatDollar(entry.amount_paid)}</TableCell>
+                                            <TableCell style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatDollar(entry.amount_owed - entry.amount_paid)}</TableCell>
+                                            <TableCell style={{ textAlign: 'center' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
+                                                    <Button variant="icon" onClick={() => handleEdit(entry)} style={{ color: PrimaryColor }}>
+                                                        <Edit size={16} />
+                                                    </Button>
+                                                    <Button variant="icon" onClick={() => handleDelete(entry.id, entry.quantity, entry.goods_received)} style={{ color: DestructiveColor }}>
+                                                        <Trash2 size={16} />
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={8} style={{ textAlign: 'center', color: MutedColor, padding: '2rem' }}>
+                                            No ledger entries found.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </CardContent>
+            </Card>
 
-        {/* Ledger Table */}
-        <Card style={{ boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-          <CardHeader
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '16px 0',
-              borderBottom: '1px solid #e5e7eb',
-              marginBottom: '0',
-            }}
-          >
-            <CardTitle style={{ marginBottom: 0 }}>Transaction History</CardTitle>
-            <div style={{ position: 'relative', width: '300px' }}>
-              <IconSearch
-                style={{
-                  position: 'absolute',
-                  left: '14px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  height: '18px',
-                  width: '18px',
-                  color: '#9ca3af', 
-                }}
-              /> {/* Icon Search */}
-              <Input
-                placeholder="Search by ID or Goods"
-                value={searchTerm}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-                style={{ paddingLeft: '45px', width: '300px' }} 
-              />
-            </div>
-          </CardHeader>
-          <CardContent style={{ padding: '0', paddingTop: '16px' }}>
-            <div
-              style={{
-                overflowX: 'auto',
-                borderRadius: '8px',
-                border: '1px solid #e5e7eb',
-              }}
-            >
-              <table style={{ minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                <thead style={{ backgroundColor: '#f3f4f6' }}>
-                  <tr>
-                    {['Date', 'Supplier ID', 'Goods', 'Quantity', 'Owed ($)', 'Paid ($)', 'Balance ($)', 'Actions'].map((header, index) => (
-                      <th
-                        key={header}
-                        style={{
-                          padding: '16px 24px', 
-                          // FIX: Set alignment based on content type
-                          textAlign: getHeaderAlignment(index),
-                          fontSize: '0.8rem', 
-                          fontWeight: '600',
-                          color: '#4b5563', 
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody style={{ backgroundColor: 'white' }}>
-                  {filteredEntries.length > 0 ? (
-                    filteredEntries.map((entry, index) => (
-                      <tr key={entry.id} style={{ borderBottom: index < filteredEntries.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', fontWeight: '500', color: '#111827', textAlign: getCellAlignment(0) }}>{entry.transaction_date}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', color: '#6b7280', textAlign: getCellAlignment(1) }}>{entry.supplier_id}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', color: '#6b7280', textAlign: getCellAlignment(2) }}>{entry.goods_received}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', textAlign: getCellAlignment(3), color: '#6b7280' }}>{entry.quantity}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', textAlign: getCellAlignment(4), fontWeight: '600', color: '#ef4444' }}>${entry.amount_owed.toFixed(2)}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', textAlign: getCellAlignment(5), fontWeight: '600', color: '#10b981' }}>${entry.amount_paid.toFixed(2)}</td>
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', textAlign: getCellAlignment(6), fontWeight: '700', color: '#4f46e5' }}>${(entry.amount_owed - entry.amount_paid).toFixed(2)}</td>
-                        {/* Action Buttons with Centering */}
-                        <td style={{ padding: '20px 24px', whiteSpace: 'nowrap', fontSize: '0.9rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}>
-                          <Button
-                            variant="default"
-                            size="sm"
-                            style={{ width: '36px', height: '36px', padding: 0, backgroundColor: 'white', color: '#4f46e5', border: '1px solid #c7d2fe' }}
-                            onClick={() => handleEdit(entry)}
-                          >
-                            <IconEdit style={{ width: '18px', height: '18px' }} /> {/* Icon Edit */}
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            style={{ width: '36px', height: '36px', padding: 0, border: '1px solid #fecaca' }}
-                            onClick={() => handleDelete(entry.id)}
-                          >
-                            <IconTrash2 style={{ width: '18px', height: '18px' }} /> {/* Icon Trash */}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={8} style={{ padding: '32px 24px', textAlign: 'center', color: '#6b7280' }}>
-                        No ledger entries found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
+        </main>
+    </div>
+  );
 };
 
 export default SupplierLedger;

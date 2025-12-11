@@ -5,9 +5,15 @@
 4 silly config load:file:C:\Users\HP\Videos\staff-tracker-main\.npmrc
 5 silly config load:file:C:\Users\HP\.npmrc
 6 silly config load:file:C:\Users\HP\AppData\Roaming\npm\etc\npmrc
-7 verbose title npm run dev
-8 verbose argv "run" "dev"
-9 verbose logfile logs-max:10 dir:C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-12-07T20_35_42_417Z-
-10 verbose logfile C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-12-07T20_35_42_417Z-debug-0.log
+7 verbose title npm run build
+8 verbose argv "run" "build"
+9 verbose logfile logs-max:10 dir:C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-12-11T21_58_52_156Z-
+10 verbose logfile C:\Users\HP\Videos\staff-tracker-main\clean\_logs\2025-12-11T21_58_52_156Z-debug-0.log
 11 silly logfile start cleaning logs, removing 1 files
 12 silly logfile done cleaning log files
+13 verbose cwd C:\Users\HP\Videos\staff-tracker-main
+14 verbose os Windows_NT 10.0.22000
+15 verbose node v24.11.0
+16 verbose npm  v11.6.3
+17 verbose exit 2
+18 verbose code 2

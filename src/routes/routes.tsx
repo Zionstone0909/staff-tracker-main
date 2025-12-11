@@ -23,6 +23,8 @@ import AdminStockMovementPage from "../pages/Admin/StockMovement";
 import AdminSupplierLedgerPage from "../pages/Admin/SupplierLedger";
 import AdminSuppliersPage from "../pages/Admin/Supplier";
 import AdminStockPage from "../pages/Admin/Stock";
+import AdminItemPage from "../pages/Admin/item"; 
+
 
 // ---------------- STAFF PAGES ----------------
 import StaffBankDepositsPage from "../pages/Staff/BankDeposit";
@@ -40,61 +42,63 @@ import StaffStockMovementPage from "../pages/Staff/StockMovement";
 import StaffSupplierLedgerPage from "../pages/Staff/SupplierLedger";
 import StaffSuppliersPage from "../pages/Staff/Supplier";
 import StaffStockPage from "../pages/Staff/Stock";
+// StaffItemPage import REMOVED due to file not found error (2307)
 
 interface RouteItem {
-  path: string;
-  component: React.FC;
-  allowedRoles: ("admin" | "staff")[];
+  path: string;
+  component: React.FC;
+  allowedRoles: ("admin" | "staff")[];
 }
 
 export const routeConfig: RouteItem[] = [
-  // ----------- PUBLIC ROUTES -----------
-  { path: "/", component: LoginPage, allowedRoles: [] },
-  { path: "/login", component: LoginPage, allowedRoles: [] },
+  // ----------- PUBLIC ROUTES -----------
+  { path: "/", component: LoginPage, allowedRoles: [] },
+  { path: "/login", component: LoginPage, allowedRoles: [] },
 
-  // Fix redirect from /dashboard
-  { path: "/dashboard", component: DashboardRedirector, allowedRoles: ["admin", "staff"] },
+  // Fix redirect from /dashboard
+  { path: "/dashboard", component: DashboardRedirector, allowedRoles: ["admin", "staff"] },
 
-  // --- ADMIN ROUTES (All correctly prefixed with /admin/) ---
-  { path: "/admin", component: AdminDashboard, allowedRoles: ["admin"] },
-  { path: "/admin/bank-deposits", component: AdminBankDepositsPage, allowedRoles: ["admin"] },
-  { path: "/admin/company-expenses", component: AdminCompanyExpensesPage, allowedRoles: ["admin"] },
-  { path: "/admin/customer-ledger", component: AdminCustomerLedgerPage, allowedRoles: ["admin"] },
-  { path: "/admin/customers", component: AdminCustomersPage, allowedRoles: ["admin"] },
-  { path: "/admin/due-sales", component: AdminDueSalesPage, allowedRoles: ["admin"] },
-  { path: "/admin/inventory", component: AdminInventoryPage, allowedRoles: ["admin"] },
-  { path: "/admin/stock", component: AdminStockPage, allowedRoles: ["admin"] },
-  { path: "/admin/payment-methods", component: AdminPaymentMethodsPage, allowedRoles: ["admin"] },
-  { path: "/admin/payroll", component: AdminPayrollPage, allowedRoles: ["admin"] },
-  { path: "/admin/reports", component: AdminReportsPage, allowedRoles: ["admin"] },
-  { path: "/admin/sales", component: AdminSalesPage, allowedRoles: ["admin"] },
-  { path: "/admin/stock-adjustment", component: AdminStockAdjustmentPage, allowedRoles: ["admin"] },
-  { path: "/admin/stock-movement", component: AdminStockMovementPage, allowedRoles: ["admin"] },
-  { path: "/admin/supplier-ledger", component: AdminSupplierLedgerPage, allowedRoles: ["admin"] },
-  { path: "/admin/suppliers", component: AdminSuppliersPage, allowedRoles: ["admin"] },
+  // --- ADMIN ROUTES (All correctly prefixed with /admin/) ---
+  { path: "/admin", component: AdminDashboard, allowedRoles: ["admin"] },
+  { path: "/admin/bank-deposits", component: AdminBankDepositsPage, allowedRoles: ["admin"] },
+  { path: "/admin/company-expenses", component: AdminCompanyExpensesPage, allowedRoles: ["admin"] },
+  { path: "/admin/customer-ledger", component: AdminCustomerLedgerPage, allowedRoles: ["admin"] },
+  { path: "/admin/customers", component: AdminCustomersPage, allowedRoles: ["admin"] },
+  { path: "/admin/due-sales", component: AdminDueSalesPage, allowedRoles: ["admin"] },
+  { path: "/admin/inventory", component: AdminInventoryPage, allowedRoles: ["admin"] },
+  { path: "/admin/item", component: AdminItemPage, allowedRoles: ["admin"] }, // <-- Correctly Added Admin Route
+  { path: "/admin/stock", component: AdminStockPage, allowedRoles: ["admin"] },
+  { path: "/admin/payment-methods", component: AdminPaymentMethodsPage, allowedRoles: ["admin"] },
+  { path: "/admin/payroll", component: AdminPayrollPage, allowedRoles: ["admin"] },
+  { path: "/admin/reports", component: AdminReportsPage, allowedRoles: ["admin"] },
+  { path: "/admin/sales", component: AdminSalesPage, allowedRoles: ["admin"] },
+  { path: "/admin/stock-adjustment", component: AdminStockAdjustmentPage, allowedRoles: ["admin"] },
+  { path: "/admin/stock-movement", component: AdminStockMovementPage, allowedRoles: ["admin"] },
+  { path: "/admin/supplier-ledger", component: AdminSupplierLedgerPage, allowedRoles: ["admin"] },
+  { path: "/admin/suppliers", component: AdminSuppliersPage, allowedRoles: ["admin"] },
 
-  // ----------------------------------------------------
-  // ----------- STAFF ROUTES (CORRECTED) -----------
-  // ----------------------------------------------------
-  
-  // Dashboard
-  { path: "/staff", component: StaffDashboard, allowedRoles: ["staff"] },
+  // ----------------------------------------------------
+  // ----------- STAFF ROUTES (CORRECTED) -----------
+  // ----------------------------------------------------
+  
+  // Dashboard
+  { path: "/staff", component: StaffDashboard, allowedRoles: ["staff"] },
 
-  // All subsequent staff pages MUST be prefixed with /staff/ to match the navigation
-  // you are using in StaffDashboard (e.g., /staff/customers).
-  { path: "/staff/sales", component: StaffSalesPage, allowedRoles: ["staff"] },
-  { path: "/staff/bank-deposits", component: StaffBankDepositsPage, allowedRoles: ["staff"] },
-  { path: "/staff/company-expenses", component: StaffCompanyExpensesPage, allowedRoles: ["staff"] },
-  { path: "/staff/customer-ledger", component: StaffCustomerLedgerPage, allowedRoles: ["staff"] },
-  { path: "/staff/customers", component: StaffCustomersPage, allowedRoles: ["staff"] },
-  { path: "/staff/due-sales", component: StaffDueSalesPage, allowedRoles: ["staff"] },
-  { path: "/staff/inventory", component: StaffInventoryPage, allowedRoles: ["staff"] },
-  { path: "/staff/stock", component: StaffStockPage, allowedRoles: ["staff"] },
-  { path: "/staff/payment-methods", component: StaffPaymentMethodsPage, allowedRoles: ["staff"] },
-  { path: "/staff/payroll", component: StaffPayrollPage, allowedRoles: ["staff"] },
-  { path: "/staff/reports", component: StaffReportsPage, allowedRoles: ["staff"] },
-  { path: "/staff/stock-adjustment", component: StaffStockAdjustmentPage, allowedRoles: ["staff"] },
-  { path: "/staff/stock-movement", component: StaffStockMovementPage, allowedRoles: ["staff"] },
-  { path: "/staff/supplier-ledger", component: StaffSupplierLedgerPage, allowedRoles: ["staff"] },
-  { path: "/staff/suppliers", component: StaffSuppliersPage, allowedRoles: ["staff"] },
+  // All subsequent staff pages MUST be prefixed with /staff/
+  { path: "/staff/sales", component: StaffSalesPage, allowedRoles: ["staff"] },
+  { path: "/staff/bank-deposits", component: StaffBankDepositsPage, allowedRoles: ["staff"] },
+  { path: "/staff/company-expenses", component: StaffCompanyExpensesPage, allowedRoles: ["staff"] },
+  { path: "/staff/customer-ledger", component: StaffCustomerLedgerPage, allowedRoles: ["staff"] },
+  { path: "/staff/customers", component: StaffCustomersPage, allowedRoles: ["staff"] },
+  { path: "/staff/due-sales", component: StaffDueSalesPage, allowedRoles: ["staff"] },
+  { path: "/staff/inventory", component: StaffInventoryPage, allowedRoles: ["staff"] },
+  // { path: "/staff/item", component: StaffItemPage, allowedRoles: ["staff"] }, // <-- Staff route removed
+  { path: "/staff/stock", component: StaffStockPage, allowedRoles: ["staff"] },
+  { path: "/staff/payment-methods", component: StaffPaymentMethodsPage, allowedRoles: ["staff"] },
+  { path: "/staff/payroll", component: StaffPayrollPage, allowedRoles: ["staff"] },
+  { path: "/staff/reports", component: StaffReportsPage, allowedRoles: ["staff"] },
+  { path: "/staff/stock-adjustment", component: StaffStockAdjustmentPage, allowedRoles: ["staff"] },
+  { path: "/staff/stock-movement", component: StaffStockMovementPage, allowedRoles: ["staff"] },
+  { path: "/staff/supplier-ledger", component: StaffSupplierLedgerPage, allowedRoles: ["staff"] },
+  { path: "/staff/suppliers", component: StaffSuppliersPage, allowedRoles: ["staff"] },
 ];

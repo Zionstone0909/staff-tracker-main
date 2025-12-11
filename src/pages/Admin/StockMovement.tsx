@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -71,7 +70,7 @@ const CheckCircle = ({ size = 16, style = {} }: { size?: number; style?: React.C
 // --- Type Definitions ---
 interface Movement {
   id: string;
-  productId: string; // ADDED: Link to inventory item
+  productId: string; 
   productName: string;
   quantity: number;
   type: 'IN' | 'OUT';
@@ -86,7 +85,7 @@ interface InventorySummary {
   totalOut: number;
 }
 
-// ADDED: Inventory item structure
+// Inventory item structure
 interface InventoryItem {
   id: string;
   sku: string;
@@ -234,14 +233,14 @@ const MovementItem: React.FC<{ movement: Movement }> = ({ movement }) => {
   );
 };
 
-// ADDED: localStorage key for inventory
+// localStorage key for inventory
 const INVENTORY_STORAGE_KEY = 'staff_tracker_inventory';
 
 // --- Main Component ---
 const StockMovement: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [selectedProductId, setSelectedProductId] = useState(''); // CHANGED: Now select from inventory
+  const [selectedProductId, setSelectedProductId] = useState(''); 
   const [quantity, setQuantity] = useState<string>('');
   const [type, setType] = useState<'IN' | 'OUT'>('IN');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -249,9 +248,9 @@ const StockMovement: React.FC = () => {
   const [inventorySummary, setInventorySummary] = useState<InventorySummary[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]); // ADDED: Load inventory
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]); 
 
-  // ADDED: Load inventory from localStorage
+  // Load inventory from localStorage
   useEffect(() => {
     const loadInventory = () => {
       const savedInventory = localStorage.getItem(INVENTORY_STORAGE_KEY);
@@ -289,7 +288,7 @@ const StockMovement: React.FC = () => {
   // Initialize auth
   useEffect(() => {
     initializeAuth();
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged((currentUser: User | null) => { 
       setUser(currentUser);
       setIsAuthReady(true);
     });
@@ -340,7 +339,7 @@ const StockMovement: React.FC = () => {
     return () => unsubscribe();
   }, [isAuthReady, user]);
 
-  // ADDED: Function to update inventory in localStorage
+  // Function to update inventory in localStorage
   const updateInventoryStock = (productId: string, quantityChange: number, isIncoming: boolean) => {
     const savedInventory = localStorage.getItem(INVENTORY_STORAGE_KEY);
     if (!savedInventory) {
@@ -409,7 +408,7 @@ const StockMovement: React.FC = () => {
         return;
       }
 
-      // ADDED: Update inventory FIRST (this validates stock levels for OUT movements)
+      // Update inventory FIRST (this validates stock levels for OUT movements)
       const inventoryUpdated = updateInventoryStock(selectedProductId, quantityNum, type === 'IN');
       
       if (!inventoryUpdated) {
@@ -442,7 +441,7 @@ const StockMovement: React.FC = () => {
     }
   };
 
-  // ADDED: Get selected product details
+  // Get selected product details
   const selectedProduct = useMemo(() => 
     inventoryItems.find(item => item.id === selectedProductId),
     [inventoryItems, selectedProductId]
@@ -678,7 +677,14 @@ const StockMovement: React.FC = () => {
             </CardHeader>
             <CardContent style={{ padding: 0 }}>
               {inventorySummary.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: LightBg, borderRadius: '0.5rem', color: MutedColor, fontStyle: 'italic' }}>
+                <div style={{ 
+                  padding: '2rem', 
+                  textAlign: 'center', 
+                  backgroundColor: LightBg, 
+                  borderRadius: '0.5rem', 
+                  color: MutedColor, 
+                  fontStyle: 'italic' 
+                }}>
                   No movements recorded yet. Add a movement to get started.
                 </div>
               ) : (
@@ -736,19 +742,32 @@ const StockMovement: React.FC = () => {
           </CardHeader>
           <CardContent>
             {movements.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: LightBg, borderRadius: '0.5rem', color: MutedColor, fontStyle: 'italic' }}>
-                No stock movements recorded yet. Record your first movement using the form above.
+              <div style={{ 
+                padding: '2rem', 
+                textAlign: 'center', 
+                backgroundColor: LightBg, 
+                borderRadius: '0.5rem', 
+                color: MutedColor, 
+                fontStyle: 'italic' 
+              }}>
+                No recent stock movements recorded.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
-                {movements.map((movement) => (
+              <div style={{ display: 'grid', gap: '0.75rem' }}>
+                {movements.map(movement => (
                   <MovementItem key={movement.id} movement={movement} />
                 ))}
+                <p style={{ fontSize: '0.75rem', color: MutedColor, textAlign: 'center', marginTop: '1rem' }}>
+                  Showing {movements.length} most recent movements.
+                </p>
               </div>
             )}
           </CardContent>
         </Card>
       </main>
+      <footer style={{ textAlign: 'center', padding: '1rem', color: MutedColor, fontSize: '0.875rem' }}>
+        Stock Movement Tracker | Powered by Staff-Tracker
+      </footer>
     </div>
   );
 };

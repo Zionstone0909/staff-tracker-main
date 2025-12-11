@@ -1,461 +1,619 @@
 "use client";
-import React, { useState, useEffect, useMemo, useCallback, FunctionComponent, CSSProperties } from 'react';
-import { auth, db, APP_ID, onAuthStateChanged } from '../../firebase';
-import { signInAnonymously, User as FirebaseUser, UserCredential, signOut } from 'firebase/auth'; // ✅ Added signOut
-import {
-  collection,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-  Timestamp,
-  DocumentData,
-  CollectionReference,
-  DocumentReference,
-  query,
-  orderBy,
-  limit,
-  runTransaction, // ✅ Important: Supports atomic updates (like Sales reducing Inventory stock)
-  getDoc,
-  setDoc,
-  increment, // ✅ Important: Supports atomic stock deduction (Sales -> Inventory)
-  FieldValue
-} from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom';
-import {
-  Loader2, AlertTriangle, Search, History, DollarSign, ArrowUp, ArrowDown, CheckCircle, Printer, Download, X, Settings,
-  ShoppingCart, Plus, Minus, Trash2, User as UserIcon, CreditCard,
-  Edit, Save, PlusCircle, MinusCircle, Package, Users, FileText, Factory, Clock, ArrowLeft // ✅ Added ArrowLeft
-} from 'lucide-react';
-import pdfMake from 'pdfmake/build/pdfmake';
-import * as pdfFonts from 'pdfmake/build/vfs_fonts';
 
-//   ✅   Safe vfs initialization
-if (pdfFonts && (pdfFonts as any).pdfMake && (pdfFonts as any).pdfMake.vfs) {
-  pdfMake.vfs = (pdfFonts as any).pdfMake.vfs;
-}
+import React, { useState, useEffect } from "react";
+import { db } from "../../firebase";
+import { 
+    collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, 
+    query, orderBy, Timestamp 
+} from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 
-/* ========================================================================== */
-/* CONFIG & UTILITIES (INLINE CSS COMPONENTS)                                 */
-/* ========================================================================== */
-
+// Define local placeholder components with inline styles
 const PrimaryColor = '#0B3D91';
 const DestructiveColor = '#dc2626';
 const SuccessColor = '#065f46';
-const MutedColor = '#6b7280';
-const TextColor = '#1f2937';
 const LightBg = '#f3f4f6';
 const OutlineBorderColor = '#e5e7eb';
+const MutedColor = '#6b7280';
 
-// --- Helper Functions for Firebase Paths ---
-const getCollectionRef = (collectionName: string): CollectionReference<DocumentData> => {
-  return collection(db, 'artifacts', APP_ID, 'public', 'data', collectionName);
-};
-const getDocRef = (collectionName: string, docId: string): DocumentReference<DocumentData> => {
-  return doc(db, 'artifacts', APP_ID, 'public', 'data', collectionName, docId);
-};
-
-// --- Types ---
-interface Item {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  cost: number;
-  stock: number;
-  supplierId?: string;
+// --- Interfaces ---
+interface StockItem {
+  id: string;
+  name: string;
+  category: string;
+  quantity: number;
+  price: number;
 }
 
 interface User {
-  id: string;
-  name: string;
-  role: 'admin' | 'staff';
-  email?: string;
+  id: string;
+  email: string;
+  role: "admin" | "staff";
 }
 
-interface Supplier {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
+// --- Utilities ---
+const getInputValue = (e: React.ChangeEvent<HTMLInputElement>): string => e.target.value;
+
+// --- UI Components (using inline styles) ---
+interface ButtonProps {
+  children: React.ReactNode;
+  onClick?: (event?: React.MouseEvent<HTMLButtonElement>) => void;
+  variant?: "ghost" | "outline" | "default" | "destructive" | "secondary";
+  size?: "sm" | "default";
+  disabled?: boolean;
+  type?: "button" | "submit" | "reset";
+  style?: React.CSSProperties;
 }
 
-interface PropsWithChildren {
-  children: React.ReactNode;
-}
-
-interface TableRowProps {
-    style?: React.CSSProperties;
-    onClick?: () => void;
-    isHeader?: boolean;
-}
-
-// --- UI Components ---
-const Button: React.FC<PropsWithChildren & React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'destructive' | 'outline' | 'ghost' }> = ({
-    children, onClick, style, disabled, type = 'button', variant = 'default', ...props
+const Button: React.FC<ButtonProps> = ({ 
+  children, 
+  onClick, 
+  disabled = false, 
+  variant = "default", 
+  size = "default", 
+  type = "button", 
+  style = {} 
 }) => {
-    let backgroundColor = PrimaryColor;
-    let color = 'white';
-    let border = 'none';
+  let backgroundColor = PrimaryColor;
+  let color = 'white';
+  let border = '1px solid transparent';
+  let padding = size === "sm" ? '0.25rem 0.75rem' : '0.5rem 1rem';
+  let fontSize = size === "sm" ? '0.875rem' : '1rem';
 
-    if (variant === 'destructive') {
-        backgroundColor = DestructiveColor;
-        color = 'white';
-    } else if (variant === 'outline') {
-        backgroundColor = 'transparent';
-        color = PrimaryColor;
-        border = `1px solid ${PrimaryColor}`;
-    } else if (variant === 'ghost') {
-        backgroundColor = 'transparent';
-        color = TextColor;
-        border = 'none';
-    }
+  if (variant === "ghost") {
+    backgroundColor = 'transparent';
+    color = PrimaryColor;
+    border = 'none';
+  } else if (variant === "outline") {
+    backgroundColor = 'transparent';
+    color = PrimaryColor;
+    border = `1px solid ${PrimaryColor}`;
+  } else if (variant === "destructive") {
+    backgroundColor = DestructiveColor;
+  } else if (variant === "secondary") {
+    backgroundColor = LightBg;
+    color = PrimaryColor;
+  }
 
-    const baseStyle: React.CSSProperties = {
-        padding: '0.5rem 1rem',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        backgroundColor: disabled ? '#ccc' : (style?.backgroundColor || backgroundColor),
-        color: disabled ? '#666' : (style?.color || color),
-        border: style?.border || border,
-        borderRadius: '4px',
-        fontWeight: '500',
-        transition: 'all 0.2s',
-        opacity: disabled ? 0.6 : 1,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '0.5rem',
-        fontSize: '0.875rem',
-        ...style
-    };
+  const baseStyle: React.CSSProperties = {
+    padding,
+    fontSize,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    backgroundColor: disabled ? '#ccc' : backgroundColor,
+    color: disabled ? '#666' : color,
+    border,
+    borderRadius: '4px',
+    fontWeight: '500',
+    transition: 'background-color 0.2s, opacity 0.2s',
+    opacity: disabled ? 0.6 : 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.5rem',
+    whiteSpace: 'nowrap',
+    ...style
+  };
 
-    return (
-        <button onClick={onClick} style={baseStyle} disabled={disabled} type={type} {...props}>
-            {children}
-        </button>
-    );
+  return (
+    <button type={type} style={baseStyle} onClick={onClick} disabled={disabled}>
+      {children}
+    </button>
+  );
 };
 
-const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
-    <input {...props} style={{ padding: '0.6rem', border: `1px solid ${OutlineBorderColor}`, borderRadius: '4px', width: '100%', boxSizing: 'border-box', ...props.style }} />
+const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ style = {}, ...props }) => (
+  <input
+    style={{
+      display: 'flex',
+      height: '40px',
+      width: '100%',
+      borderRadius: '4px',
+      border: '1px solid #ccc',
+      backgroundColor: 'white',
+      padding: '0.6rem 0.8rem',
+      fontSize: '1rem',
+      color: '#1f2937',
+      outline: 'none',
+      boxSizing: 'border-box',
+      transition: 'border-color 0.15s ease-in-out',
+      ...style
+    }}
+    {...props}
+  />
 );
 
-const Card: React.FC<PropsWithChildren & { style?: React.CSSProperties }> = ({ children, style }) => (
-    <div style={{ border: `1px solid ${OutlineBorderColor}`, borderRadius: '8px', padding: '1.5rem', marginBottom: '1rem', backgroundColor: '#fff', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', ...style }}>
-        {children}
-    </div>
+const Card: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }> = ({ children, style = {} }) => (
+  <div style={{ 
+    borderRadius: '8px', 
+    backgroundColor: 'white', 
+    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', 
+    border: `1px solid ${OutlineBorderColor}`, 
+    marginBottom: '1.5rem',
+    ...style 
+  }}>
+    {children}
+  </div>
 );
 
-const Table: React.FC<PropsWithChildren & { style?: React.CSSProperties }> = ({ children, style }) => <table style={{ width: '100%', borderCollapse: 'collapse', ...style }}>{children}</table>;
-const TableHeader: React.FC<PropsWithChildren> = ({ children }) => <thead>{children}</thead>;
-const TableBody: React.FC<PropsWithChildren> = ({ children }) => <tbody>{children}</tbody>;
-
-const TableRow: React.FC<PropsWithChildren & TableRowProps> = ({ children, style, onClick, isHeader }) => (
-    <tr 
-        onClick={onClick} 
-        style={{ 
-            borderBottom: isHeader ? `2px solid ${PrimaryColor}` : `1px solid ${OutlineBorderColor}`, 
-            cursor: onClick ? 'pointer' : 'default', 
-            transition: 'background-color 0.1s', 
-            backgroundColor: isHeader ? '#f1f5f9' : 'transparent',
-            ...style 
-        }} 
-        onMouseEnter={(e) => { if(onClick && !isHeader) e.currentTarget.style.backgroundColor = '#f9fafb'}} 
-        onMouseLeave={(e) => { if(onClick && !isHeader) e.currentTarget.style.backgroundColor = isHeader ? '#f1f5f9' : 'transparent'}}
-    >
-        {children}
-    </tr>
+const CardHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{ padding: '1.5rem', borderBottom: `1px solid ${OutlineBorderColor}` }}>
+    {children}
+  </div>
 );
 
-const TableHead: React.FC<PropsWithChildren & { style?: React.CSSProperties }> = ({ children, style }) => <th scope="col" style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 'bold', color: MutedColor, fontSize: '0.85rem', ...style }}>{children}</th>;
-const TableCell: React.FC<PropsWithChildren & { colSpan?: number, style?: React.CSSProperties }> = ({ children, style, colSpan }) => <td colSpan={colSpan} style={{ padding: '0.75rem', verticalAlign: 'middle', fontSize: '0.875rem', color: TextColor, ...style }}>{children}</td>;
+const CardTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: PrimaryColor, margin: 0 }}>
+    {children}
+  </h2>
+);
 
+const CardContent: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }> = ({ children, style = {} }) => (
+  <div style={{ padding: '1.5rem', ...style }}>
+    {children}
+  </div>
+);
 
-// --- Utility Functions ---
-const formatCurrency = (amount: number) => `₱${(amount || 0).toFixed(2)}`;
-const formatDate = (timestamp: Timestamp | number) => {
-  const date = typeof timestamp === 'number' ? new Date(timestamp) : timestamp.toDate();
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const Table: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <table style={{ minWidth: '100%', width: '100%', borderCollapse: 'collapse' }}>
+    {children}
+  </table>
+);
+
+const TableHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => <thead>{children}</thead>;
+
+const TableHead: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <th style={{ 
+    padding: '0.75rem 1.5rem', 
+    textAlign: 'left', 
+    fontSize: '0.875rem', 
+    fontWeight: '600', 
+    color: MutedColor, 
+    textTransform: 'uppercase', 
+    backgroundColor: '#f9fafb', 
+    borderBottom: `2px solid ${OutlineBorderColor}` 
+  }}>
+    {children}
+  </th>
+);
+
+const TableRow: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <tr style={{ borderBottom: `1px solid ${OutlineBorderColor}`, transition: 'background-color 0.15s' }}>
+    {children}
+  </tr>
+);
+
+const TableBody: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <tbody style={{ backgroundColor: 'white' }}>{children}</tbody>
+);
+
+const TableCell: React.FC<{ 
+  children: React.ReactNode; 
+  colSpan?: number; 
+  style?: React.CSSProperties 
+}> = ({ children, colSpan, style = {} }) => (
+  <td colSpan={colSpan} style={{ padding: '1rem 1.5rem', fontSize: '0.875rem', color: '#1f2937', ...style }}>
+    {children}
+  </td>
+);
+
+// --- Modal Component ---
+interface ModalState {
+  type: "error" | "confirm" | "info";
+  text: string;
+  onConfirm?: () => void;
+}
+
+const AlertModal: React.FC<{ modal: ModalState | null; onClose: () => void }> = ({ modal, onClose }) => {
+  if (!modal) return null;
+
+  let title = "";
+  let buttonText = "OK";
+  let buttonColor = PrimaryColor;
+
+  if (modal.type === "error") { 
+    title = "Validation Error"; 
+    buttonColor = DestructiveColor; 
+  } else if (modal.type === "confirm") { 
+    title = "Confirm Action"; 
+    buttonText = "Delete"; 
+    buttonColor = DestructiveColor; 
+  } else { 
+    title = "Information"; 
+  }
+
+  const handleAction = () => { 
+    if (modal.type === "confirm" && modal.onConfirm) {
+      modal.onConfirm(); 
+    }
+    onClose(); 
+  };
+
+  return (
+    <div style={{ 
+      position: 'fixed', 
+      inset: 0, 
+      backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      zIndex: 50, 
+      padding: '1rem' 
+    }}>
+      <div style={{ 
+        backgroundColor: 'white', 
+        borderRadius: '8px', 
+        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)', 
+        maxWidth: '28rem', 
+        width: '100%', 
+        padding: '1.5rem' 
+      }}>
+        <h3 style={{ 
+          fontSize: '1.5rem', 
+          fontWeight: 'bold', 
+          marginBottom: '1rem', 
+          color: modal.type === "error" ? DestructiveColor : PrimaryColor 
+        }}>
+          {title}
+        </h3>
+        <p style={{ color: '#4b5563', marginBottom: '1.5rem' }}>{modal.text}</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+          {modal.type === "confirm" && (
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          )}
+          <Button onClick={handleAction} style={{ backgroundColor: buttonColor }}>{buttonText}</Button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
+// --- Main Component ---
+export default function InventoryPage() {
+  const navigate = useNavigate();
+  const [stock, setStock] = useState<StockItem[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [invalidFields, setInvalidFields] = useState<string[]>([]);
+  const [modal, setModal] = useState<ModalState | null>(null);
+  const [newItem, setNewItem] = useState<Omit<StockItem, "id">>({ 
+    name: "", 
+    category: "", 
+    quantity: 0, 
+    price: 0 
+  });
+  const [loading, setLoading] = useState(true);
 
-/* ========================================================================== */
-/* MAIN COMPONENT: INVENTORY                                                 */
-/* ========================================================================== */
+  // Load User & Firestore Data
+  useEffect(() => {
+    // 1. User Logic (Mock for now, replacing localStorage if needed)
+    const userString = localStorage.getItem("currentUser");
+    const user: User | null = userString 
+      ? JSON.parse(userString) 
+      : { id: "mock-admin-123", email: "admin@mock.com", role: "admin" };
+    setCurrentUser(user);
 
-const Inventory: React.FC = () => {
-  const navigate = useNavigate();
-  
-  // --- State Management ---
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState<Item[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  
-  // Modal State (Implementation omitted)
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isStockModalOpen, setIsStockModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [stockAdjustment, setStockAdjustment] = useState({ id: '', name: '', adjustment: 0, type: 'in', description: '' });
-  const [formData, setFormData] = useState({ name: '', description: '', price: 0, cost: 0, stock: 0, supplierId: '' });
-  
-  // --- Initialization and Listeners ---
-  useEffect(() => {
-    // 1. User Authentication and Role Check
-    const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser && firebaseUser.uid) {
-        const userRef = doc(db, 'artifacts', APP_ID, 'public', 'users', firebaseUser.uid);
-        const unsubUser = onSnapshot(userRef, (doc) => {
-          if (doc.exists()) {
-            const userData = doc.data() as User;
-            const normalizedRole = (userData.role || 'staff').toLowerCase() as 'admin' | 'staff';
-            setCurrentUser({
-              ...userData,
-              id: doc.id,
-              role: normalizedRole,
-            });
-          } else {
-            setCurrentUser({ id: firebaseUser.uid, name: 'Anonymous', role: 'staff' });
-          }
-          setLoading(false);
-        }, (error) => {
-          console.error("Error fetching user role:", error);
-          setLoading(false);
-        });
-        return unsubUser;
-      } else {
-        setCurrentUser(null);
-        setLoading(false);
-      }
-    });
+    // 2. Firestore Listener
+    // Maps Firestore fields (units_available, unit_price) to UI fields (quantity, price)
+    const q = query(collection(db, 'inventory'), orderBy('name'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+              id: doc.id,
+              name: data.name || "Unknown",
+              category: data.category || "General",
+              quantity: typeof data.units_available === 'number' ? data.units_available : 0,
+              price: typeof data.unit_price === 'number' ? data.unit_price : 0
+          } as StockItem;
+      });
+      setStock(items);
+      setLoading(false);
+    });
 
-    // 2. Items Listener (Implementation omitted for brevity)
-    const itemsQuery = query(getCollectionRef('items'), orderBy('name'));
-    const unsubItems = onSnapshot(itemsQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Item));
-      setItems(data);
-    });
+    return () => unsubscribe();
+  }, []);
 
-    // 3. Suppliers Listener (Implementation omitted for brevity)
-    const suppliersQuery = query(getCollectionRef('suppliers'), orderBy('name'));
-    const unsubSuppliers = onSnapshot(suppliersQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Supplier));
-      setSuppliers(data);
-    });
+  const validateStockItem = (item: StockItem | Omit<StockItem, "id">) => {
+    const invalid: string[] = [];
+    if (!item.name?.trim()) invalid.push("name");
+    // Category is optional in some logic, but enforced here if desired. 
+    // Commenting out category validation for broader compatibility if simple ledger items are added without it.
+    // if (!item.category?.trim()) invalid.push("category");
+    if (item.quantity < 0) invalid.push("quantity");
+    if (item.price < 0) invalid.push("price");
+    return invalid;
+  };
 
-    return () => {
-      unsubAuth();
-      unsubItems();
-      unsubSuppliers();
-    };
-  }, []);
-  
-  // --- Handlers for CRUD ---
-  // NOTE: The inclusion of 'runTransaction' and 'increment' imports ensures that the 'Sales.tsx'
-  // file can reliably update the inventory 'items' collection when a sale is completed.
-  const handleSaveItem = async () => { /* ... implementation ... */ };
-  const handleDeleteItem = async (id: string, name: string) => { /* ... implementation ... */ };
-  const handleAdjustStock = async () => { /* ... implementation ... */ };
+  const handleAddItem = async () => {
+    if (currentUser?.role !== "admin") {
+      setModal({ type: "error", text: "Only administrators can add items." });
+      return;
+    }
 
-  // --- Authentication & Navigation Handlers ---
-  const handleLogout = () => {
-        signOut(auth).then(() => {
-            navigate('/login');
-        }).catch(error => {
-            console.error("Logout failed:", error);
+    const invalid = validateStockItem(newItem);
+    if (invalid.length > 0) {
+      setInvalidFields(invalid);
+      setModal({ type: "error", text: `Please correct the following fields: ${invalid.join(", ")}` });
+      return;
+    }
+
+    setInvalidFields([]);
+
+    try {
+        await addDoc(collection(db, 'inventory'), {
+            name: newItem.name,
+            category: newItem.category || "General",
+            units_available: Number(newItem.quantity),
+            unit_price: Number(newItem.price),
+            created_at: Timestamp.now()
         });
-    };
+        
+        setNewItem({ name: "", category: "", quantity: 0, price: 0 });
+        setModal({ type: "info", text: `Item "${newItem.name}" added successfully.` });
+    } catch (error) {
+        console.error("Error adding item:", error);
+        setModal({ type: "error", text: "Failed to save item to database." });
+    }
+  };
 
-  // --- Modal Openers (Omitted for brevity) ---
-  const openAddItemModal = () => { /* ... implementation ... */ };
-  const openEditModal = (item: Item) => { /* ... implementation ... */ };
-  const openStockModal = (item: Item) => { /* ... implementation ... */ };
+  const handleEditInput = (field: keyof Omit<StockItem, "id">, id: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = getInputValue(e);
+    // Optimistic Update locally
+    setStock(prev => prev.map(item => {
+      if (item.id === id) {
+        if (field === "quantity" || field === "price") {
+          return { ...item, [field]: Number(val) || 0 };
+        }
+        return { ...item, [field]: val };
+      }
+      return item;
+    }));
+  };
 
-  // --- Filtered Data (Omitted for brevity) ---
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  
-  const getSupplierName = (supplierId: string | undefined) => {
-    const supplier = suppliers.find(s => s.id === supplierId);
-    return supplier ? supplier.name : 'N/A';
-  };
+  const handleSave = async (item: StockItem) => {
+    const invalid = validateStockItem(item);
+    if (invalid.length > 0) {
+      setInvalidFields(invalid);
+      setModal({ type: "error", text: `Please correct the following fields: ${invalid.join(", ")}` });
+      return;
+    }
 
-  // --- Conditional Rendering (Access Control) ---
+    setInvalidFields([]);
+    
+    try {
+        await updateDoc(doc(db, 'inventory', item.id), {
+            name: item.name,
+            category: item.category,
+            units_available: Number(item.quantity),
+            unit_price: Number(item.price)
+        });
+        
+        setEditingId(null);
+        setModal({ type: "info", text: `Item "${item.name}" updated successfully.` });
+    } catch (error) {
+        console.error("Error updating item:", error);
+        setModal({ type: "error", text: "Failed to update item." });
+    }
+  };
 
-  if (loading) {
-      return (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: LightBg, flexDirection: 'column', color: PrimaryColor }}>
-            <Loader2 style={{ animation: 'spin 1s linear infinite', marginBottom: '1rem' }} size={40} />
-            <p style={{ fontWeight: 500 }}>Loading Inventory...</p>
-        </div>
-      );
-  }
+  const deleteItemFromStock = async (id: string) => {
+    try {
+        await deleteDoc(doc(db, 'inventory', id));
+        setModal({ type: "info", text: "Item deleted successfully." });
+    } catch (error) {
+        console.error("Error deleting item:", error);
+        setModal({ type: "error", text: "Failed to delete item." });
+    }
+  };
 
-  // Check access: Only users with the normalized 'admin' role can proceed
-  if (!currentUser || currentUser.role !== 'admin') {
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: LightBg, padding: '2rem' }}>
-            <AlertTriangle size={48} style={{ color: DestructiveColor, marginBottom: '1rem' }} />
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: DestructiveColor }}>ACCESS DENIED</h1>
-            <p style={{ color: MutedColor, marginTop: '0.5rem', textAlign: 'center' }}>You must be logged in as an Admin to access the Inventory Management page.</p>
-            <Button onClick={() => navigate('/login')} style={{ marginTop: '1.5rem' }}>Go to Login</Button>
-        </div>
-      );
-  }
+  const handleDelete = (id: string, name: string) => {
+    setModal({ 
+      type: "confirm", 
+      text: `Are you sure you want to delete "${name}"?`, 
+      onConfirm: () => deleteItemFromStock(id) 
+    });
+  };
 
-  // --- Admin View Render ---
-  return (
-    <div style={{ minHeight: '100vh', backgroundColor: LightBg, padding: 0, fontFamily: 'sans-serif', color: TextColor }}>
-      
-      {/* Navigation Bar */}
-      <nav style={{ borderBottom: `1px solid ${OutlineBorderColor}`, backgroundColor: '#fff', padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {/* Sales POS (Updates Inventory) */}
-            <Button variant="outline" onClick={() => navigate('/sales')} style={{ color: PrimaryColor, borderColor: OutlineBorderColor }}>
-                <ShoppingCart size={16} /> Sales POS
-            </Button>
-            
-            {/* Stock for Staff (Assuming a simple stock view) */}
-            <Button variant="outline" onClick={() => navigate('/staff/stock')} style={{ color: PrimaryColor, borderColor: OutlineBorderColor }}>
-                <Package size={16} /> Staff Stock
-            </Button>
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setInvalidFields([]);
+    // Re-fetch handled by onSnapshot automatically, but if we mutated local state optimistically, 
+    // it will reset on next snapshot update or we can leave it as is if it's annoying.
+    // For simplicity, we just clear editing state.
+  };
 
-            {/* Stock for Admin (Detailed/Adjustment View) */}
-            <Button variant="outline" onClick={() => navigate('/admin/stock')} style={{ color: PrimaryColor, borderColor: OutlineBorderColor }}>
-                <Settings size={16} /> Admin Stock
-            </Button>
+  const showForm = currentUser?.role === "admin";
 
-            {/* Report for Admin */}
-            <Button variant="outline" onClick={() => navigate('/admin/records')} style={{ color: PrimaryColor, borderColor: OutlineBorderColor }}>
-                <History size={16} /> Reports/Records
-            </Button>
+  return (
+    <div style={{ minHeight: '100vh', backgroundColor: LightBg, fontFamily: 'Inter, sans-serif' }}>
+      <AlertModal modal={modal} onClose={() => setModal(null)} />
 
-            {/* Customer Ledger */}
-            <Button variant="outline" onClick={() => navigate('/admin/customer-ledger')} style={{ color: PrimaryColor, borderColor: OutlineBorderColor }}>
-                <Users size={16} /> Customer Ledger
-            </Button>
+      {/* Top Navigation */}
+      <nav style={{ 
+        borderBottom: '1px solid #e5e7eb', 
+        backgroundColor: '#fff', 
+        padding: '1rem', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)' 
+      }}>
+        <Button
+          variant="ghost"
+          style={{ color: PrimaryColor }}
+          onClick={() => navigate(-1)}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+          </svg>
+          <span>Back</span>
+        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <span style={{ fontSize: '0.875rem', color: MutedColor }}>
+            Role: <strong style={{ color: PrimaryColor }}>{currentUser?.role || 'Guest'}</strong>
+          </span>
+          <Button variant="destructive" onClick={() => {
+            localStorage.removeItem("currentUser");
+            window.location.reload(); // Simple reload to reset state/mock user
+          }}>
+            Logout
+          </Button>
+        </div>
+      </nav>
 
-          </div>
-          
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {/* Back and Arrow Button */}
-            <Button variant="outline" onClick={() => navigate(-1)} style={{ color: PrimaryColor, borderColor: OutlineBorderColor }}>
-                <ArrowLeft size={16} /> Back
-            </Button>
+      <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem 1rem' }}>
+        <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: PrimaryColor, marginBottom: '2rem' }}>
+          Inventory Stock Management
+        </h1>
 
-            {/* Logout Button */}
-            <Button variant="destructive" onClick={handleLogout}>
-                Logout
-            </Button>
-          </div>
-      </nav>
+        {/* Add Item Form */}
+        {showForm && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Add New Stock Item</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                {([
+                  ["name", "Name", "text"], 
+                  ["category", "Category", "text"], 
+                  ["quantity", "Quantity", "number"], 
+                  ["price", "Price (₦)", "number"]
+                ] as const).map(([field, label, inputType]) => (
+                  <div key={field}>
+                    <label 
+                      htmlFor={field} 
+                      style={{ 
+                        display: 'block', 
+                        fontSize: '0.875rem', 
+                        fontWeight: '600', 
+                        color: '#374151', 
+                        marginBottom: '0.5rem' 
+                      }}
+                    >
+                      {label}
+                    </label>
+                    <Input
+                      id={field}
+                      type={inputType}
+                      placeholder={`Enter ${label.toLowerCase()}`}
+                      min={inputType === "number" ? 0 : undefined}
+                      step={field === "price" ? "0.01" : "1"}
+                      value={newItem[field] === 0 && (field === "quantity" || field === "price") ? "" : newItem[field]}
+                      style={{ borderColor: invalidFields.includes(field) ? DestructiveColor : '#ccc' }}
+                      onChange={e => {
+                        const val = getInputValue(e);
+                        setNewItem(prev => ({ 
+                          ...prev, 
+                          [field]: field === "quantity" || field === "price" 
+                            ? (val === "" ? 0 : Number(val)) 
+                            : val 
+                        }));
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <Button onClick={handleAddItem} style={{ marginTop: '1.5rem', width: '100%', backgroundColor: SuccessColor }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                <span>Add New Item</span>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
-      <div style={{ padding: '1.5rem', maxWidth: '1400px', margin: '0 auto' }}>
-        
-        {/* Header & Actions (Rest of the component's JSX remains the same) */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', gap: '1rem' }}>
-          <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: PrimaryColor }}>Inventory Management</h1>
-            <p style={{ fontSize: '0.875rem', color: MutedColor, marginTop: '0.5rem' }}>Manage products, prices, and stock levels.</p>
-          </div>
-          <Button onClick={openAddItemModal} variant="default">
-            <Plus size={16} /> Add New Item
-          </Button>
-        </div>
-
-        {/* Search Bar */}
-        <Card style={{ marginBottom: '1.5rem' }}>
-          <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: MutedColor, textTransform: 'uppercase', marginBottom: '0.5rem', display: 'block' }}>Search Inventory</label>
-          <div style={{ position: 'relative' }}>
-            <Search size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-            <Input 
-              type="text" 
-              placeholder="Search by item name or description..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ paddingLeft: '2.5rem', height: '42px' }}
-            />
-          </div>
-        </Card>
-
-        {/* Items Table */}
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <Table>
-              <TableHeader>
-                <TableRow style={{ backgroundColor: '#f9fafb' }} isHeader={true}>
-                  <TableHead style={{ width: '25%' }}>Item Name</TableHead>
-                  <TableHead style={{ width: '15%', textAlign: 'right' }}>Price (Sell)</TableHead>
-                  <TableHead style={{ width: '15%', textAlign: 'right' }}>Cost (Buy)</TableHead>
-                  <TableHead style={{ width: '15%', textAlign: 'center' }}>Stock</TableHead>
-                  <TableHead style={{ width: '20%' }}>Supplier</TableHead>
-                  <TableHead style={{ width: '10%', textAlign: 'center' }}>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredItems.length > 0 ? (
-                  filteredItems.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <div style={{ fontWeight: 600, color: PrimaryColor }}>{item.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: MutedColor, marginTop: '0.2rem' }}>{item.description}</div>
-                      </TableCell>
-                      <TableCell style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatCurrency(item.price)}</TableCell>
-                      <TableCell style={{ textAlign: 'right', color: MutedColor }}>{formatCurrency(item.cost)}</TableCell>
-                      <TableCell style={{ textAlign: 'center' }}>
-                        <span style={{ 
-                          padding: '0.25rem 0.5rem', 
-                          borderRadius: '9999px', 
-                          backgroundColor: item.stock < 10 ? '#fee2e2' : '#d1fae5', 
-                          color: item.stock < 10 ? DestructiveColor : SuccessColor, 
-                          fontWeight: 'bold', 
-                          fontSize: '0.75rem'
-                        }}>
-                          {item.stock} {item.stock < 10 && '(Low Stock)'}
-                        </span>
-                      </TableCell>
-                      <TableCell style={{ color: PrimaryColor, fontWeight: 500 }}>
-                        {getSupplierName(item.supplierId)}
-                      </TableCell>
-                      <TableCell style={{ textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                          <Button onClick={() => openStockModal(item)} title="Adjust Stock" variant="outline" style={{ padding: '0.5rem', background: '#eff6ff', color: PrimaryColor, borderColor: OutlineBorderColor, borderWidth: '0px', height: '36px', width: '36px' }}>
-                            <PlusCircle size={16} />
-                          </Button>
-                          <Button onClick={() => openEditModal(item)} title="Edit Item" variant="outline" style={{ padding: '0.5rem', background: '#eff6ff', color: PrimaryColor, borderColor: OutlineBorderColor, borderWidth: '0px', height: '36px', width: '36px' }}>
-                            <Edit size={16} />
-                          </Button>
-                          <Button onClick={() => handleDeleteItem(item.id, item.name)} title="Delete Item" variant="destructive" style={{ padding: '0.5rem', background: '#fee2e2', color: DestructiveColor, height: '36px', width: '36px' }}>
-                            <Trash2 size={16} />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: MutedColor }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                          <Package size={32} style={{ opacity: 0.5, marginBottom: '0.5rem' }} />
-                          <p>No items found. Click "Add New Item" to begin.</p>
-                        </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      </div>
-
-      {/* The Add/Edit Item Modal and Stock Adjustment Modal implementations are here in your original file */}
-    </div>
-  );
-};
-
-export default Inventory;
+        {/* Stock Table */}
+        <Card style={{ marginBottom: 0 }}>
+          <CardHeader>
+            <CardTitle>Current Stock Items ({stock.length})</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: 0 }}>
+            {loading ? (
+                 <div style={{ padding: '2rem', textAlign: 'center', color: MutedColor }}>Loading inventory...</div>
+            ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {["Name", "Category", "Quantity", "Price (₦)", "Actions"].map(h => (
+                      <TableHead key={h}>{h}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stock.length > 0 ? stock.map(item => (
+                    <TableRow key={item.id}>
+                      {(["name", "category", "quantity", "price"] as const).map(field => (
+                        <TableCell key={field}>
+                          {editingId === item.id ? (
+                            <Input
+                              type={field === "quantity" || field === "price" ? "number" : "text"}
+                              value={item[field]}
+                              min={field === "quantity" || field === "price" ? 0 : undefined}
+                              step={field === "price" ? "0.01" : "1"}
+                              onChange={handleEditInput(field, item.id)}
+                              style={{ borderColor: invalidFields.includes(field) ? DestructiveColor : '#ccc' }}
+                            />
+                          ) : (
+                            field === 'price' ? `₦${item.price.toLocaleString('en-NG', { minimumFractionDigits: 2 })}` :
+                            field === 'quantity' ? (
+                              <span style={{ 
+                                fontWeight: '600', 
+                                color: item.quantity < 10 ? DestructiveColor : SuccessColor 
+                              }}>
+                                {item.quantity}
+                              </span>
+                            ) : item[field]
+                          )}
+                        </TableCell>
+                      ))}
+                      <TableCell>
+                        {currentUser?.role === "admin" && (
+                          editingId === item.id ? (
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <Button size="sm" onClick={() => handleSave(item)} style={{ backgroundColor: SuccessColor }}>
+                                Save
+                              </Button>
+                              <Button size="sm" variant="secondary" onClick={handleCancelEdit}>
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <Button size="sm" onClick={() => setEditingId(item.id)}>
+                                Edit
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => handleDelete(item.id, item.name)}>
+                                Delete
+                              </Button>
+                            </div>
+                          )
+                        )}
+                        {currentUser?.role === "staff" && (
+                          <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: '0.875rem' }}>
+                            View Only
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )) : (
+                    <TableRow>
+                      <TableCell colSpan={5} style={{ textAlign: 'center', padding: '3rem', color: MutedColor }}>
+                        {showForm 
+                          ? "Inventory is empty. Add a new item above!" 
+                          : "No stock items available."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            )}
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  );
+}
